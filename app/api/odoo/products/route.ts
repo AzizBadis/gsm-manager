@@ -42,7 +42,6 @@ export async function GET(request: NextRequest) {
             'pos_categ_ids', 'image_128', 'barcode',
             'default_code', 'description_sale', 'available_in_pos',
           ],
-          limit: 500,
           order: 'name asc',
         },
       },
@@ -131,12 +130,14 @@ export async function PATCH(request: NextRequest) {
     if (available_in_pos !== undefined) vals.available_in_pos = available_in_pos;
     if (pos_categ_id !== undefined) vals.pos_categ_ids = [[6, 0, pos_categ_id ? [parseInt(pos_categ_id)] : []]];
 
+    const ids = Array.isArray(id) ? id.map((i: any) => parseInt(i)) : [parseInt(id)];
+
     await odooRPC(
       '/web/dataset/call_kw',
       {
         model: 'product.product',
         method: 'write',
-        args: [[parseInt(id)], vals],
+        args: [ids, vals],
         kwargs: {},
       },
       sessionId

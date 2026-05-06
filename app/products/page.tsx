@@ -8,8 +8,9 @@ import {
   Plus, Search, Edit2, ToggleLeft, ToggleRight,
   ArrowLeft, Loader2, Package, X, Save, AlertCircle,
   CheckCircle2, RefreshCw, Tag, DollarSign, Barcode,
-  Eye,
+  Eye, Square, CheckSquare, MinusSquare,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface OdooProduct {
   id: number;
@@ -56,6 +57,10 @@ export default function ProductsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showPOSOnly, setShowPOSOnly] = useState(false);
 
+  // Selection & Bulk state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<OdooProduct | null>(null);
@@ -99,6 +104,23 @@ export default function ProductsPage() {
     const matchesPOS = !showPOSOnly || p.available_in_pos;
     return matchesSearch && matchesPOS;
   });
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredProducts.length && filteredProducts.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredProducts.map((p) => p.id)));
+    }
+  };
 
   const openCreate = () => {
     setEditingProduct(null);
@@ -212,6 +234,39 @@ export default function ProductsPage() {
     }
   };
 
+  const handleBulkTogglePOS = async (available: boolean) => {
+    if (selectedIds.size === 0 || !sessionId) return;
+    setIsBulkUpdating(true);
+    const idsToUpdate = Array.from(selectedIds);
+    try {
+      const res = await fetch(`/api/odoo/products?session_id=${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: idsToUpdate, available_in_pos: available }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await recordAuditLog({
+          action: available ? 'bulk-enabled' : 'bulk-disabled',
+          entityType: 'product',
+          entityName: `${idsToUpdate.length} produits`,
+          actor: user?.name,
+          details: `Mise a jour groupée de ${idsToUpdate.length} produits (POS: ${available})`,
+        });
+        setProducts((prev) =>
+          prev.map((p) =>
+            idsToUpdate.includes(p.id) ? { ...p, available_in_pos: available } : p
+          )
+        );
+        setSelectedIds(new Set());
+      }
+    } catch (err) {
+      console.error('Bulk update failed', err);
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -223,7 +278,7 @@ export default function ProductsPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Top bar */}
-      <div className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-border bg-card px-6 shadow-sm">
+      <div className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-card px-6 shadow-sm">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push('/')}
@@ -263,7 +318,7 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="p-6 max-w-7xl mx-auto pb-32">
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3 mb-6">
           <div className="relative flex-1">
@@ -303,6 +358,19 @@ export default function ProductsPage() {
           ))}
         </div>
 
+        {/* Selection Info Bar */}
+        {selectedIds.size > 0 && selectedIds.size === filteredProducts.length && filteredProducts.length < products.length && (
+          <div className="mb-4 rounded-lg bg-primary/10 border border-primary/20 p-3 text-center text-sm">
+            Toute la sélection visible ({filteredProducts.length} produits) est sélectionnée.{' '}
+            <button
+              onClick={() => setSelectedIds(new Set(products.map((p) => p.id)))}
+              className="font-bold text-primary hover:underline"
+            >
+              Sélectionner les {products.length} produits du catalogue
+            </button>
+          </div>
+        )}
+
         {/* Products table */}
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
@@ -320,6 +388,20 @@ export default function ProductsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/40">
+                  <th className="px-4 py-3 w-10 text-center">
+                    <button
+                      onClick={handleSelectAll}
+                      className="inline-flex items-center justify-center p-1 rounded-md hover:bg-muted transition-colors"
+                    >
+                      {selectedIds.size === 0 ? (
+                        <Square className="h-4 w-4 text-muted-foreground" />
+                      ) : selectedIds.size === filteredProducts.length ? (
+                        <CheckSquare className="h-4 w-4 text-primary" />
+                      ) : (
+                        <MinusSquare className="h-4 w-4 text-primary" />
+                      )}
+                    </button>
+                  </th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground w-12"></th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Product</th>
                   <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Sale Price</th>
@@ -331,9 +413,29 @@ export default function ProductsPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {filteredProducts.map((product) => {
+                  const isSelected = selectedIds.has(product.id);
                   const hasImage = typeof product.image_128 === 'string' && product.image_128.length > 0;
                   return (
-                    <tr key={product.id} className="hover:bg-muted/30 transition-colors group">
+                    <tr
+                      key={product.id}
+                      className={cn(
+                        'hover:bg-muted/30 transition-colors group',
+                        isSelected && 'bg-primary/5 hover:bg-primary/10'
+                      )}
+                    >
+                      {/* Checkbox */}
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => toggleSelect(product.id)}
+                          className="inline-flex items-center justify-center p-1 rounded-md hover:bg-muted transition-colors"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Square className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </button>
+                      </td>
                       {/* Image */}
                       <td className="px-4 py-3">
                         {hasImage ? (
@@ -411,6 +513,47 @@ export default function ProductsPage() {
           </div>
         )}
       </div>
+
+      {/* Bulk Actions Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 duration-300">
+          <div className="flex items-center gap-6 px-6 py-4 rounded-2xl bg-slate-900 text-white shadow-2xl border border-white/10 backdrop-blur-xl">
+            <div className="flex flex-col">
+              <span className="text-xs font-black uppercase tracking-widest text-slate-400">Sélection</span>
+              <span className="text-lg font-black tracking-tight">{selectedIds.size} produits</span>
+            </div>
+            
+            <div className="h-10 w-px bg-white/20" />
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleBulkTogglePOS(true)}
+                disabled={isBulkUpdating}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-black transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isBulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ToggleRight className="h-4 w-4" />}
+                Activer au POS
+              </button>
+              <button
+                onClick={() => handleBulkTogglePOS(false)}
+                disabled={isBulkUpdating}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-black transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isBulkUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ToggleLeft className="h-4 w-4" />}
+                Retirer du POS
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                disabled={isBulkUpdating}
+                className="p-2.5 rounded-xl hover:bg-white/10 transition-colors"
+                title="Annuler la sélection"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create / Edit Modal */}
       {modalOpen && (
