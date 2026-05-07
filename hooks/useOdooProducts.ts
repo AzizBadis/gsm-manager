@@ -51,6 +51,7 @@ function transformProduct(odooProduct: OdooProduct): Product {
     image: hasImage ? `data:image/png;base64,${odooProduct.image_128}` : getPlaceholderColor(odooProduct.id),
     description: odooProduct.description_sale || undefined,
     barcode: odooProduct.barcode || undefined,
+    costPrice: odooProduct.standard_price,
   };
 }
 

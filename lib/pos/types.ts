@@ -13,12 +13,14 @@ export interface Product {
   image: string;
   description?: string;
   barcode?: string;
+  costPrice?: number;
 }
 
 export interface CartItem {
   product: Product;
   quantity: number;
-  discount?: number; // percentage discount (e.g. 10 for 10%)
+  discountAmount?: number; // absolute discount in DT
+  imei?: string;
 }
 
 export interface Order {

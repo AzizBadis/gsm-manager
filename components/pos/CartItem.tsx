@@ -2,7 +2,7 @@
 
 import { CartItem as CartItemType } from '@/lib/pos/types';
 import { Button } from '@/components/ui/button';
-import { Minus, Plus, Trash2 } from 'lucide-react';
+import { Minus, Plus, Trash2, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CartItemProps {
@@ -12,6 +12,7 @@ interface CartItemProps {
   onClick?: () => void;
   onQtyClick?: () => void;
   onPriceClick?: () => void;
+  onImeiClick?: () => void;
   isSelected?: boolean;
 }
 
@@ -22,6 +23,7 @@ export function CartItem({
   onClick,
   onQtyClick,
   onPriceClick,
+  onImeiClick,
   isSelected = false,
 }: CartItemProps) {
   return (
@@ -38,6 +40,11 @@ export function CartItem({
         <p className="text-sm font-semibold text-foreground truncate">
           {item.product.name}
         </p>
+        {item.imei && (
+          <p className="text-[10px] font-mono font-bold text-blue-500 bg-blue-50 px-1 rounded w-fit mt-0.5">
+            IMEI: {item.imei}
+          </p>
+        )}
         <p className="text-xs text-muted-foreground flex gap-1 items-center">
           <span
             onClick={(e) => { e.stopPropagation(); onPriceClick?.(); }}
@@ -52,17 +59,29 @@ export function CartItem({
           >
             {item.quantity}
           </span>
-          {item.discount ? (
+          {item.discountAmount ? (
             <span className={cn(
               "font-medium",
               isSelected ? "text-blue-100" : "text-emerald-500"
             )}>
-               (-{item.discount}%)
+               (-{item.discountAmount.toFixed(2)} DT)
             </span>
           ) : null}
         </p>
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "h-8 w-8 p-0",
+            isSelected ? "text-white hover:bg-white/20" : "text-blue-600 hover:bg-blue-50"
+          )}
+          onClick={onImeiClick}
+          title="Saisir l'IMEI"
+        >
+          <Smartphone className="h-4 w-4" />
+        </Button>
         <Button
           variant="ghost"
           size="sm"

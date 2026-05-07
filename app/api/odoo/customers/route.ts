@@ -45,7 +45,7 @@ async function fetchAllCustomers(domain: any[], sessionId: string) {
         method: 'search_read',
         args: [domain],
         kwargs: {
-          fields: ['id', 'name', 'phone', 'email', 'barcode', 'active'],
+          fields: ['id', 'name', 'phone', 'mobile', 'email', 'street', 'city', 'state_id', 'country_id', 'vat', 'barcode', 'active'],
           limit: batchSize,
           offset,
           order: 'id asc',
@@ -107,29 +107,23 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, phone, email } = body;
+    const { name, phone, mobile, email, street, city, vat } = body;
 
     if (!name) {
-      return NextResponse.json(
-        { error: 'Customer name is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Customer name is required' }, { status: 400 });
     }
+
+    const vals: Record<string, any> = { name, is_company: false, customer_rank: 1 };
+    if (phone) vals.phone = phone;
+    if (mobile) vals.mobile = mobile;
+    if (email) vals.email = email;
+    if (street) vals.street = street;
+    if (city) vals.city = city;
+    if (vat) vals.vat = vat;
 
     const newCustomerId = await odooRPC(
       '/web/dataset/call_kw',
-      {
-        model: 'res.partner',
-        method: 'create',
-        args: [[{ 
-            name, 
-            phone, 
-            email, 
-            is_company: false, 
-            customer_rank: 1 
-        }]],
-        kwargs: {},
-      },
+      { model: 'res.partner', method: 'create', args: [[vals]], kwargs: {} },
       sessionId
     );
 
@@ -141,7 +135,7 @@ export async function POST(request: NextRequest) {
         method: 'read',
         args: [newCustomerId],
         kwargs: {
-          fields: ['id', 'name', 'phone', 'email', 'barcode'],
+          fields: ['id', 'name', 'phone', 'mobile', 'email', 'street', 'city', 'state_id', 'country_id', 'vat', 'barcode'],
         },
       },
       sessionId

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Percent, Package } from 'lucide-react';
+import { ArrowLeft, Percent, Package, Banknote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -27,7 +27,7 @@ export function Numberpad({
 }: NumberpadProps) {
   const modes: { id: PadMode; label: string; icon: any }[] = [
     { id: 'qty', label: 'Qté', icon: Package },
-    { id: 'disc', label: '% Rem.', icon: Percent },
+    { id: 'disc', label: 'Rem. DT', icon: Banknote },
   ];
 
   return (

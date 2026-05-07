@@ -125,7 +125,6 @@ export async function POST(request: NextRequest) {
     }
 
     const posSessionId: number = sessions[0].id;
-    const configId: number     = sessions[0].config_id[0];
 
     // ── 2. Use the provided payment method id ────────────────────────────────
     let paymentMethodId: number | false = reqPaymentMethodId ? parseInt(reqPaymentMethodId, 10) : false;
@@ -149,8 +148,16 @@ export async function POST(request: NextRequest) {
     const orderLines = cart.map((item: any) => {
       const priceUnit = item.product.price;
       const qty       = item.quantity;
-      const discount  = item.discount || 0;
-      const lineTotal = priceUnit * qty * (1 - discount / 100);
+      const totalBeforeDiscount = priceUnit * qty;
+      const discAmt   = item.discountAmount || 0;
+      
+      // Odoo expects a percentage in the 'discount' field
+      const discountPercent = totalBeforeDiscount > 0 ? (discAmt / totalBeforeDiscount) * 100 : 0;
+      const lineTotal = totalBeforeDiscount - discAmt;
+
+      // Add IMEI to the line description if present
+      const lineName = item.imei ? `${item.product.name} (IMEI: ${item.imei})` : item.product.name;
+
       return [
         0,
         0,
@@ -158,7 +165,8 @@ export async function POST(request: NextRequest) {
           product_id:          parseInt(item.product.id),
           qty,
           price_unit:          priceUnit,
-          discount,
+          discount:            discountPercent,
+          name:                lineName,
           price_subtotal:      lineTotal,
           price_subtotal_incl: lineTotal,
           tax_ids:             [[6, false, []]],
@@ -224,7 +232,6 @@ export async function POST(request: NextRequest) {
     // ── 7. Create official Odoo accounting invoice (account.move) ─────────────
     let invoiceNumber: string | null = null;
     try {
-      // This creates an account.move linked to the pos.order
       await odooRPC(
         '/web/dataset/call_kw',
         {
@@ -236,7 +243,6 @@ export async function POST(request: NextRequest) {
         sessionId
       );
 
-      // Read back the pos.order to get the linked account.move id
       const [orderWithInvoice] = await odooRPC(
         '/web/dataset/call_kw',
         {
@@ -248,7 +254,6 @@ export async function POST(request: NextRequest) {
         sessionId
       );
 
-      // account_move is a Many2one → Odoo returns [id, display_name] tuple
       const accountMoveRaw = orderWithInvoice?.account_move;
       const invoiceId: number | null = Array.isArray(accountMoveRaw)
         ? accountMoveRaw[0]
@@ -268,11 +273,9 @@ export async function POST(request: NextRequest) {
         invoiceNumber = invoiceData?.name || null;
       }
     } catch (invoiceErr: any) {
-      // Non-fatal — order is already paid; invoicing may not be configured
       console.warn('Could not create Odoo accounting invoice:', invoiceErr.message);
     }
 
-    // ── 8. Read back the auto-generated POS reference ────────────────────────
     const [orderInfo] = await odooRPC(
       '/web/dataset/call_kw',
       {
@@ -290,7 +293,7 @@ export async function POST(request: NextRequest) {
         id:            orderId,
         name:          orderInfo?.name          || `Order-${orderId}`,
         reference:     orderInfo?.pos_reference || orderInfo?.name || `Order-${orderId}`,
-        invoiceNumber: invoiceNumber,          // official account.move name e.g. FINV/2026/00001
+        invoiceNumber: invoiceNumber,
       },
     });
   } catch (error: any) {
@@ -299,5 +302,39 @@ export async function POST(request: NextRequest) {
       { error: error.message || 'Failed to create order in Odoo' },
       { status: 500 }
     );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const sessionId = request.nextUrl.searchParams.get('session_id');
+    if (!sessionId) return NextResponse.json({ error: 'Missing session_id' }, { status: 401 });
+
+    const body = await request.json();
+    const { id, name, phone, email, active } = body;
+
+    if (!id) return NextResponse.json({ error: 'Customer id is required' }, { status: 400 });
+
+    const vals: Record<string, any> = {};
+    if (name !== undefined) vals.name = name;
+    if (phone !== undefined) vals.phone = phone || false;
+    if (email !== undefined) vals.email = email || false;
+    if (active !== undefined) vals.active = active;
+
+    await odooRPC(
+      '/web/dataset/call_kw',
+      {
+        model: 'res.partner',
+        method: 'write',
+        args: [[parseInt(id)], vals],
+        kwargs: {},
+      },
+      sessionId
+    );
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Customer update error:', error);
+    return NextResponse.json({ error: error.message || 'Failed to update customer' }, { status: 500 });
   }
 }

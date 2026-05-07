@@ -358,7 +358,7 @@ export default function ProductsPage() {
           ))}
         </div>
 
-        {/* Selection Info Bar */}
+        {/* Global Selection Banner */}
         {selectedIds.size > 0 && selectedIds.size === filteredProducts.length && filteredProducts.length < products.length && (
           <div className="mb-4 rounded-lg bg-primary/10 border border-primary/20 p-3 text-center text-sm">
             Toute la sélection visible ({filteredProducts.length} produits) est sélectionnée.{' '}

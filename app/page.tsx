@@ -37,9 +37,9 @@ export default function Home() {
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
-  const [discountModalOpen, setDiscountModalOpen] = useState(false);
   const [closureModalOpen, setClosureModalOpen] = useState(false);
   const [refundModalOpen, setRefundModalOpen] = useState(false);
+  const [imeiModalOpen, setImeiModalOpen] = useState(false);
   const [numberpadValue, setNumberpadValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
@@ -53,6 +53,7 @@ export default function Home() {
     setSelectedProductId,
     setCustomer,
     applyItemDiscount,
+    updateImei,
     addToCart,
     updateQuantity,
     removeFromCart,
@@ -107,11 +108,13 @@ export default function Home() {
   };
 
   const handleClear = () => {
-    if (cart.length > 0 && confirm('Clear all items from cart?')) {
+    if (cart.length > 0 && confirm('Voulez-vous vider le panier ?')) {
       clearCart();
       setNumberpadValue('');
+      setSelectedProductId(null);
+      setSidebarMode('edit');
       toast({
-        description: 'Cart cleared',
+        description: 'Panier vidé',
         duration: 2000,
       });
     }
@@ -170,8 +173,24 @@ export default function Home() {
       updateQuantity(selectedProductId, val);
       toast({ description: `Quantité : ${val}` });
     } else if (padMode === 'disc') {
-      applyItemDiscount(selectedProductId, val);
-      toast({ description: `Remise : ${val}%` });
+      const item = cart.find(i => i.product.id === selectedProductId);
+      if (item) {
+        const costPrice = item.product.costPrice || 0;
+        const lineTotal = item.product.price * item.quantity;
+        const minLinePrice = costPrice * item.quantity;
+
+        if (lineTotal - val < minLinePrice) {
+          toast({ 
+            variant: "destructive", 
+            title: "Remise Refusée",
+            description: `Marge insuffisante ! Le prix ne peut pas descendre en dessous du prix d'achat (${minLinePrice.toFixed(2)} DT).` 
+          });
+          return;
+        }
+
+        applyItemDiscount(selectedProductId, val);
+        toast({ description: `Remise appliquée : ${val} DT` });
+      }
     }
 
     setNumberpadValue('');
@@ -291,10 +310,9 @@ export default function Home() {
               setPadMode('qty');
               setNumberpadValue('');
             }}
-            onPriceSelectItem={(id) => {
+            onImeiSelectItem={(id) => {
               setSelectedProductId(id);
-              setPadMode('disc');
-              setNumberpadValue('');
+              setImeiModalOpen(true);
             }}
             onConfirmArticles={() => {
               setSidebarMode('confirm');
@@ -332,7 +350,14 @@ export default function Home() {
           <BottomActions
             customer={customer}
             onCustomer={() => setCustomerModalOpen(true)}
-            onDiscount={() => setDiscountModalOpen(true)}
+            onDiscount={() => {
+              if (selectedProductId) {
+                setPadMode('disc');
+                setNumberpadValue('');
+              } else {
+                toast({ description: "Sélectionnez d'abord un article" });
+              }
+            }}
             onRetour={() => setRefundModalOpen(true)}
             onClosure={() => setClosureModalOpen(true)}
             onClear={handleClear}
@@ -364,13 +389,13 @@ export default function Home() {
         }}
       />
 
-      <DiscountModal
-        open={discountModalOpen}
-        onClose={() => setDiscountModalOpen(false)}
+      <ImeiModal
+        open={imeiModalOpen}
+        onClose={() => setImeiModalOpen(false)}
         cart={cart}
-        onApplyDiscount={(productId, discount) => {
-          applyItemDiscount(productId, discount);
-          toast({ description: `Discount applied`, duration: 2000 });
+        onApplyImei={(productId, imei) => {
+          updateImei(productId, imei);
+          toast({ description: `IMEI enregistré : ${imei}` });
         }}
       />
 

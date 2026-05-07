@@ -17,6 +17,7 @@ interface OrderPanelProps {
   onSelectItem: (productId: string | null) => void;
   onQtySelectItem: (productId: string) => void;
   onPriceSelectItem: (productId: string) => void;
+  onImeiSelectItem: (productId: string) => void;
   selectedProductId: string | null;
   mode: 'edit' | 'confirm';
 }
@@ -32,6 +33,7 @@ export function OrderPanel({
   onSelectItem,
   onQtySelectItem,
   onPriceSelectItem,
+  onImeiSelectItem,
   selectedProductId,
   mode,
 }: OrderPanelProps) {
@@ -71,6 +73,7 @@ export function OrderPanel({
               onClick={() => onSelectItem(item.product.id)}
               onQtyClick={() => onQtySelectItem(item.product.id)}
               onPriceClick={() => onPriceSelectItem(item.product.id)}
+              onImeiClick={() => onImeiSelectItem(item.product.id)}
               onQuantityChange={(qty) =>
                 onQuantityChange(item.product.id, qty)
               }

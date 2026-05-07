@@ -37,10 +37,21 @@ export function usePOSState() {
     }
   };
 
-  const applyItemDiscount = (productId: string, discount: number) => {
+  // Set absolute DT discount amount (not cumulative — replaces existing)
+  const applyItemDiscount = (productId: string, amount: number) => {
     setCart((prev) =>
       prev.map((item) =>
-        item.product.id === productId ? { ...item, discount } : item
+        item.product.id === productId
+          ? { ...item, discountAmount: amount }
+          : item
+      )
+    );
+  };
+
+  const updateImei = (productId: string, imei: string) => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, imei } : item
       )
     );
   };
@@ -61,6 +72,7 @@ export function usePOSState() {
     updateQuantity,
     removeFromCart,
     applyItemDiscount,
+    updateImei,
     clearCart,
   };
 }
