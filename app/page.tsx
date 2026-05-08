@@ -20,9 +20,9 @@ import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, RefreshCw, WifiOff } from 'lucide-react';
 import { CustomerModal } from '@/components/pos/CustomerModal';
-import { DiscountModal } from '@/components/pos/DiscountModal';
 import { ClosureModal } from '@/components/pos/ClosureModal';
 import { RefundModal } from '@/components/pos/RefundModal';
+import { ImeiModal } from '@/components/pos/ImeiModal';
 
 export default function Home() {
   const router = useRouter();

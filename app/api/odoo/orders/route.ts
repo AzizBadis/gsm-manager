@@ -305,36 +305,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
-  try {
-    const sessionId = request.nextUrl.searchParams.get('session_id');
-    if (!sessionId) return NextResponse.json({ error: 'Missing session_id' }, { status: 401 });
-
-    const body = await request.json();
-    const { id, name, phone, email, active } = body;
-
-    if (!id) return NextResponse.json({ error: 'Customer id is required' }, { status: 400 });
-
-    const vals: Record<string, any> = {};
-    if (name !== undefined) vals.name = name;
-    if (phone !== undefined) vals.phone = phone || false;
-    if (email !== undefined) vals.email = email || false;
-    if (active !== undefined) vals.active = active;
-
-    await odooRPC(
-      '/web/dataset/call_kw',
-      {
-        model: 'res.partner',
-        method: 'write',
-        args: [[parseInt(id)], vals],
-        kwargs: {},
-      },
-      sessionId
-    );
-
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error('Customer update error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to update customer' }, { status: 500 });
-  }
-}
