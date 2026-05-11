@@ -10,11 +10,11 @@ export function OrderSummary({ subtotal, tax, total }: OrderSummaryProps) {
   return (
     <div className="space-y-2 border-t border-border pt-3">
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Subtotal</span>
+        <span className="text-muted-foreground">Sous-total</span>
         <span className="font-semibold text-foreground">{subtotal.toFixed(2)} DT</span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Tax (8%)</span>
+        <span className="text-muted-foreground">TVA (8%)</span>
         <span className="font-semibold text-foreground">{tax.toFixed(2)} DT</span>
       </div>
       <div className="flex justify-between border-t border-border pt-2">

@@ -1,19 +1,20 @@
 'use client';
 
-import { ArrowLeft, Percent, Package, Banknote } from 'lucide-react';
+import { ArrowLeft, Banknote, Package, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-export type PadMode = 'qty' | 'disc';
+export type PadMode = 'qty' | 'disc' | 'price';
 
 interface NumberpadProps {
   onNumber: (digit: string) => void;
   onBackspace: () => void;
   onClear: () => void;
   onSubmit: () => void;
-  activeMode: PadMode;
-  onModeChange: (mode: PadMode) => void;
+  activeMode?: PadMode;
+  onModeChange?: (mode: PadMode) => void;
   value: string;
+  label?: string;
 }
 
 export function Numberpad({
@@ -24,55 +25,57 @@ export function Numberpad({
   activeMode,
   onModeChange,
   value,
+  label = 'Valeur',
 }: NumberpadProps) {
   const modes: { id: PadMode; label: string; icon: any }[] = [
     { id: 'qty', label: 'Qté', icon: Package },
-    { id: 'disc', label: 'Rem. DT', icon: Banknote },
+    { id: 'disc', label: 'Remise', icon: Banknote },
+    { id: 'price', label: 'Prix', icon: Tag },
   ];
 
   return (
-    <div className="flex gap-2 rounded-xl bg-card p-2 shadow-xl border border-border/50 select-none">
-      {/* Mode Sidebar - Ultra Compact */}
-      <div className="flex flex-col gap-1 w-14">
-        {modes.map((mode) => (
-          <button
-            key={mode.id}
-            onClick={() => onModeChange(mode.id)}
-            className={cn(
-              "flex flex-col items-center justify-center gap-1 h-11 rounded-lg border transition-all duration-200",
-              activeMode === mode.id
-                ? "bg-blue-600 border-blue-500 text-white shadow shadow-blue-500/20"
-                : "bg-secondary/40 border-transparent text-muted-foreground hover:bg-secondary/60"
-            )}
-          >
-            <mode.icon className="h-4 w-4" />
-            <span className="text-[8px] font-black uppercase tracking-tighter">{mode.label}</span>
-          </button>
-        ))}
-      </div>
+    <div className="flex h-full bg-white select-none">
+      {/* Mode Sidebar - Only show if onModeChange is provided */}
+      {onModeChange && (
+        <div className="flex flex-col gap-1 w-16 p-2 border-r border-border bg-slate-50">
+          {modes.map((mode) => (
+            <button
+              key={mode.id}
+              onClick={() => onModeChange(mode.id)}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 h-14 rounded-md border transition-all",
+                activeMode === mode.id
+                  ? "bg-blue-600 border-blue-500 text-white"
+                  : "bg-white border-border text-muted-foreground hover:bg-slate-50"
+              )}
+            >
+              <mode.icon className="h-4 w-4" />
+              <span className="text-[8px] font-bold uppercase">{mode.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Main Pad Area */}
-      <div className="flex-1 flex flex-col gap-1.5">
-        {/* Compact Display Row */}
-        <div className="flex items-center gap-2 rounded-lg bg-secondary/80 px-2.5 py-1.5 border border-border/30">
-          <div className="flex-1 text-right">
-            <span className="text-xl font-black tabular-nums">{value || '0'}</span>
-            <span className="text-[10px] ml-1 font-bold opacity-50 uppercase">{activeMode}</span>
-          </div>
+      <div className="flex-1 flex flex-col p-3 gap-3">
+        {/* Simple Display */}
+        <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-border rounded-md">
+          <span className="text-[10px] font-bold text-muted-foreground uppercase">{label}</span>
+          <span className="text-xl font-bold tabular-nums text-foreground">{value || '0'}</span>
         </div>
 
-        {/* Numbers Grid - Ultra Compact */}
-        <div className="grid grid-cols-3 gap-1">
+        {/* Numbers Grid */}
+        <div className="grid grid-cols-3 gap-2 flex-1">
           {['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', '.', 'back'].map((key) => {
             if (key === 'back') {
               return (
                 <Button
                   key={key}
-                  variant="secondary"
+                  variant="outline"
                   onClick={onBackspace}
-                  className="h-10 rounded-lg p-0"
+                  className="h-full border-border hover:bg-slate-50"
                 >
-                  <ArrowLeft className="h-4 w-4" />
+                  <ArrowLeft className="h-5 w-5" />
                 </Button>
               );
             }
@@ -81,7 +84,7 @@ export function Numberpad({
                 key={key}
                 variant="outline"
                 onClick={() => onNumber(key)}
-                className="h-10 text-sm font-black rounded-lg border border-border/30"
+                className="h-full text-lg font-bold border-border hover:bg-slate-50"
               >
                 {key}
               </Button>
@@ -90,19 +93,19 @@ export function Numberpad({
         </div>
 
         {/* Footer Actions */}
-        <div className="grid grid-cols-2 gap-1">
+        <div className="grid grid-cols-2 gap-2 mt-auto">
           <Button
             variant="outline"
             onClick={onClear}
-            className="h-9 gap-1 rounded-lg border font-bold text-[10px] uppercase"
+            className="h-12 border-border font-bold uppercase text-xs"
           >
             Vider
           </Button>
           <Button
             onClick={onSubmit}
-            className="h-9 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow shadow-blue-500/20 active:scale-[0.98] transition-all uppercase"
+            className="h-12 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase"
           >
-            ENTRER
+            Entrer
           </Button>
         </div>
       </div>

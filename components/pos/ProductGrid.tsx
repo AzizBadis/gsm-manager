@@ -12,7 +12,7 @@ export function ProductGrid({ products, onProductClick }: ProductGridProps) {
   if (products.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <p className="text-muted-foreground">No products available</p>
+        <p className="text-muted-foreground">Aucun article disponible</p>
       </div>
     );
   }

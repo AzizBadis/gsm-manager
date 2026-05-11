@@ -18,6 +18,8 @@ function getPlaceholderColor(id: string | number): string {
 
 interface OdooProduct {
   id: number;
+  product_tmpl_id: [number, string] | false;
+  categ_id: [number, string] | false;
   name: string;
   list_price: number;
   pos_categ_ids: number[] | [number, string][];
@@ -37,6 +39,7 @@ interface OdooCategory {
 
 function transformProduct(odooProduct: OdooProduct): Product {
   const hasImage = typeof odooProduct.image_128 === 'string' && odooProduct.image_128.length > 0;
+  const productCategoryName = Array.isArray(odooProduct.categ_id) ? odooProduct.categ_id[1] : '';
   let categoryId = 'uncategorized';
   if (odooProduct.pos_categ_ids && odooProduct.pos_categ_ids.length > 0) {
     const firstCat = odooProduct.pos_categ_ids[0];
@@ -45,6 +48,11 @@ function transformProduct(odooProduct: OdooProduct): Product {
   return {
     id: String(odooProduct.id),
     odooId: odooProduct.id,
+    productTemplateId: Array.isArray(odooProduct.product_tmpl_id)
+      ? odooProduct.product_tmpl_id[0]
+      : odooProduct.id,
+    productCategoryName,
+    requiresImei: productCategoryName.toLowerCase().includes('mobile'),
     name: odooProduct.name,
     category: categoryId,
     price: odooProduct.list_price,
@@ -52,6 +60,7 @@ function transformProduct(odooProduct: OdooProduct): Product {
     description: odooProduct.description_sale || undefined,
     barcode: odooProduct.barcode || undefined,
     costPrice: odooProduct.standard_price,
+    defaultCode: odooProduct.default_code || undefined,
   };
 }
 
@@ -101,7 +110,7 @@ export function useOdooProducts() {
       setIsLoading(false);
       fetchingRef.current = false;
     }
-  }, []); // stable — sid passed as argument
+  }, []); // stable — sid passed as argument, no deps needed
 
   // Only re-fetch when the sessionId string actually changes
   useEffect(() => {

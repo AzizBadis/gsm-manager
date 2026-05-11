@@ -20,6 +20,7 @@ interface OdooProduct {
   pos_categ_ids: number[] | [number, string][];
   image_128: string | false;
   barcode: string | false;
+  default_code: string | false;
   description_sale: string | false;
   available_in_pos: boolean;
 }
@@ -34,6 +35,7 @@ interface ProductFormData {
   list_price: string;
   standard_price: string;
   barcode: string;
+  default_code: string;
   description_sale: string;
   pos_categ_id: string;
 }
@@ -43,6 +45,7 @@ const emptyForm: ProductFormData = {
   list_price: '',
   standard_price: '',
   barcode: '',
+  default_code: '',
   description_sale: '',
   pos_categ_id: '',
 };
@@ -100,7 +103,8 @@ export default function ProductsPage() {
     const q = searchQuery.toLowerCase();
     const matchesSearch =
       p.name.toLowerCase().includes(q) ||
-      (typeof p.barcode === 'string' && p.barcode.includes(q));
+      (typeof p.barcode === 'string' && p.barcode.includes(q)) ||
+      (typeof p.default_code === 'string' && p.default_code.toLowerCase().includes(q));
     const matchesPOS = !showPOSOnly || p.available_in_pos;
     return matchesSearch && matchesPOS;
   });
@@ -140,6 +144,7 @@ export default function ProductsPage() {
       list_price: String(product.list_price),
       standard_price: String(product.standard_price),
       barcode: typeof product.barcode === 'string' ? product.barcode : '',
+      default_code: typeof product.default_code === 'string' ? product.default_code : '',
       description_sale: typeof product.description_sale === 'string' ? product.description_sale : '',
       pos_categ_id: catId,
     });
@@ -285,12 +290,12 @@ export default function ProductsPage() {
             className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to POS
+            Retour au POS
           </button>
           <div className="h-6 w-px bg-border" />
           <h1 className="text-lg font-bold text-foreground flex items-center gap-2">
             <Package className="h-5 w-5 text-primary" />
-            Product Management
+            Gestion du Catalogue
           </h1>
         </div>
         <div className="flex items-center gap-3">
@@ -306,14 +311,14 @@ export default function ProductsPage() {
             className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors"
           >
             <RefreshCw className="h-4 w-4" />
-            Refresh
+            Actualiser
           </button>
           <button
             onClick={openCreate}
             className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
           >
             <Plus className="h-4 w-4" />
-            Add Product
+            Ajouter un Article
           </button>
         </div>
       </div>
@@ -325,7 +330,7 @@ export default function ProductsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search by name or barcode..."
+              placeholder="Rechercher par nom, code-barres ou référence interne..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full rounded-xl border bg-card pl-10 pr-4 py-2.5 text-sm shadow-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
@@ -347,9 +352,9 @@ export default function ProductsPage() {
         {/* Stats row */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           {[
-            { label: 'Total Products', value: products.length, color: 'text-foreground' },
-            { label: 'Available in POS', value: products.filter((p) => p.available_in_pos).length, color: 'text-emerald-600' },
-            { label: 'Hidden from POS', value: products.filter((p) => !p.available_in_pos).length, color: 'text-muted-foreground' },
+            { label: 'Total Articles', value: products.length, color: 'text-foreground' },
+            { label: 'Disponibles au POS', value: products.filter((p) => p.available_in_pos).length, color: 'text-emerald-600' },
+            { label: 'Masqués du POS', value: products.filter((p) => !p.available_in_pos).length, color: 'text-muted-foreground' },
           ].map((stat) => (
             <div key={stat.label} className="rounded-xl border border-border bg-card p-4 shadow-sm">
               <p className="text-xs text-muted-foreground">{stat.label}</p>
@@ -375,13 +380,13 @@ export default function ProductsPage() {
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading products from Odoo...</p>
+            <p className="text-sm text-muted-foreground">Chargement des articles depuis Odoo...</p>
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
             <Package className="h-12 w-12 opacity-30" />
-            <p className="font-medium">No products found</p>
-            <button onClick={openCreate} className="text-sm text-primary underline">Add your first product</button>
+            <p className="font-medium">Aucun article trouvé</p>
+            <button onClick={openCreate} className="text-sm text-primary underline">Ajouter votre premier article</button>
           </div>
         ) : (
           <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
@@ -403,10 +408,11 @@ export default function ProductsPage() {
                     </button>
                   </th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground w-12"></th>
-                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Product</th>
-                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Sale Price</th>
-                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Cost</th>
-                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground hidden md:table-cell">Barcode</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Article</th>
+                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Prix de Vente</th>
+                  <th className="text-right px-4 py-3 font-semibold text-muted-foreground">Prix d'Achat</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground hidden md:table-cell">Référence interne</th>
+                  <th className="text-left px-4 py-3 font-semibold text-muted-foreground hidden md:table-cell">Code-barres</th>
                   <th className="text-center px-4 py-3 font-semibold text-muted-foreground">POS</th>
                   <th className="text-center px-4 py-3 font-semibold text-muted-foreground">Actions</th>
                 </tr>
@@ -467,6 +473,16 @@ export default function ProductsPage() {
                       <td className="px-4 py-3 text-right text-muted-foreground">
                         {product.standard_price > 0 ? `${product.standard_price.toFixed(2)} DT` : '—'}
                       </td>
+                      {/* Référence */}
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        {typeof product.default_code === 'string' && product.default_code ? (
+                          <span className="text-xs font-medium text-foreground">
+                            {product.default_code}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/40 text-xs">—</span>
+                        )}
+                      </td>
                       {/* Barcode */}
                       <td className="px-4 py-3 hidden md:table-cell">
                         {typeof product.barcode === 'string' && product.barcode ? (
@@ -502,7 +518,7 @@ export default function ProductsPage() {
                           className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
                         >
                           <Edit2 className="h-3 w-3" />
-                          Edit
+                          Modifier
                         </button>
                       </td>
                     </tr>
@@ -563,7 +579,7 @@ export default function ProductsPage() {
             <div className="flex items-center justify-between border-b px-6 py-4 bg-primary/5">
               <h2 className="text-lg font-bold flex items-center gap-2">
                 {editingProduct ? <Edit2 className="h-5 w-5 text-primary" /> : <Plus className="h-5 w-5 text-primary" />}
-                {editingProduct ? 'Edit Product' : 'Add New Product'}
+                {editingProduct ? 'Modifier l\'Article' : 'Ajouter un Nouvel Article'}
               </h2>
               <button onClick={() => setModalOpen(false)} className="rounded-full p-2 hover:bg-black/5 transition-colors">
                 <X className="h-5 w-5 text-muted-foreground" />
@@ -573,7 +589,7 @@ export default function ProductsPage() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               {/* Name */}
               <div>
-                <label className="block text-sm font-medium mb-1">Product Name *</label>
+                <label className="block text-sm font-medium mb-1">Nom de l'Article *</label>
                 <input
                   type="text"
                   value={form.name}
@@ -588,7 +604,7 @@ export default function ProductsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 flex items-center gap-1">
-                    <DollarSign className="h-3 w-3" />Sale Price (DT) *
+                    <DollarSign className="h-3 w-3" />Prix de Vente (DT) *
                   </label>
                   <input
                     type="number"
@@ -603,7 +619,7 @@ export default function ProductsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 flex items-center gap-1">
-                    <Tag className="h-3 w-3" />Cost Price (DT)
+                    <Tag className="h-3 w-3" />Prix d'Achat (DT)
                   </label>
                   <input
                     type="number"
@@ -620,7 +636,7 @@ export default function ProductsPage() {
               {/* Margin indicator */}
               {form.list_price && form.standard_price && parseFloat(form.list_price) > 0 && (
                 <div className="rounded-lg bg-muted/40 px-4 py-2 text-xs flex justify-between">
-                  <span className="text-muted-foreground">Margin</span>
+                  <span className="text-muted-foreground">Marge</span>
                   <span className={`font-semibold ${
                     parseFloat(form.list_price) > parseFloat(form.standard_price)
                       ? 'text-emerald-600'
@@ -634,30 +650,41 @@ export default function ProductsPage() {
 
               {/* POS Category */}
               <div>
-                <label className="block text-sm font-medium mb-1">POS Category</label>
+                <label className="block text-sm font-medium mb-1">Catégorie POS</label>
                 <select
                   value={form.pos_categ_id}
                   onChange={(e) => setForm({ ...form, pos_categ_id: e.target.value })}
                   className="w-full rounded-xl border bg-muted/20 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                 >
-                  <option value="">-- No category --</option>
+                  <option value="">-- Aucune catégorie --</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Barcode */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Barcode</label>
-                <input
-                  type="text"
-                  value={form.barcode}
-                  onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-                  className="w-full rounded-xl border bg-muted/20 px-4 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                  placeholder="e.g. 6201234567890"
-                />
-              </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Référence interne</label>
+                    <input
+                      type="text"
+                      value={form.default_code}
+                      onChange={(e) => setForm({ ...form, default_code: e.target.value })}
+                      className="w-full rounded-xl border bg-muted/20 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                      placeholder="Ex: IP15-SCR"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Code-barres</label>
+                    <input
+                      type="text"
+                      value={form.barcode}
+                      onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                      className="w-full rounded-xl border bg-muted/20 px-4 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                      placeholder="e.g. 6201234567890"
+                    />
+                  </div>
+                </div>
 
               {/* Description */}
               <div>
@@ -667,7 +694,7 @@ export default function ProductsPage() {
                   onChange={(e) => setForm({ ...form, description_sale: e.target.value })}
                   rows={2}
                   className="w-full rounded-xl border bg-muted/20 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-none"
-                  placeholder="Short product description..."
+                  placeholder="Courte description du produit..."
                 />
               </div>
 
@@ -692,7 +719,7 @@ export default function ProductsPage() {
                   onClick={() => setModalOpen(false)}
                   className="flex-1 rounded-xl border py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
                 >
-                  Cancel
+                  Annuler
                 </button>
                 <button
                   type="submit"

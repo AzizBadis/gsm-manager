@@ -1,8 +1,6 @@
-'use client';
-
 import { CartItem as CartItemType } from '@/lib/pos/types';
 import { Button } from '@/components/ui/button';
-import { Minus, Plus, Trash2, Smartphone } from 'lucide-react';
+import { Trash2, Smartphone, Hash } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CartItemProps {
@@ -27,91 +25,69 @@ export function CartItem({
   isSelected = false,
 }: CartItemProps) {
   return (
-    <div
+    <div 
       onClick={onClick}
       className={cn(
-        "flex items-center justify-between gap-2 rounded-xl px-4 py-3 transition-all cursor-pointer group",
-        isSelected
-          ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20 ring-2 ring-blue-400/50"
-          : "bg-secondary/40 hover:bg-secondary/60 text-foreground"
+        "group flex flex-col py-3 px-3 transition-all cursor-pointer border-b border-border/40 relative",
+        isSelected 
+          ? "bg-blue-50/40 dark:bg-blue-900/10 shadow-[inset_2px_0_0_0_#2563eb]" 
+          : "bg-transparent hover:bg-slate-50/50"
       )}
     >
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground truncate">
-          {item.product.name}
-        </p>
-        {item.imei && (
-          <p className="text-[10px] font-mono font-bold text-blue-500 bg-blue-50 px-1 rounded w-fit mt-0.5">
-            IMEI: {item.imei}
-          </p>
-        )}
-        <p className="text-xs text-muted-foreground flex gap-1 items-center">
-          <span
-            onClick={(e) => { e.stopPropagation(); onPriceClick?.(); }}
-            className="hover:underline cursor-pointer"
-          >
-            {item.product.price.toFixed(2)} DT
-          </span>
-          x
-          <span
-            onClick={(e) => { e.stopPropagation(); onQtyClick?.(); }}
-            className="font-bold text-foreground px-1 bg-secondary/80 rounded hover:bg-primary/20 transition-colors cursor-pointer"
-          >
-            {item.quantity}
-          </span>
-          {item.discountAmount ? (
-            <span className={cn(
-              "font-medium",
-              isSelected ? "text-blue-100" : "text-emerald-500"
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className={cn(
+              "text-[13px] font-bold truncate transition-colors",
+              isSelected ? "text-blue-700 dark:text-blue-400" : "text-foreground"
             )}>
-               (-{item.discountAmount.toFixed(2)} DT)
+              {item.product.name}
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+              {item.quantity} <span className="lowercase font-medium">x</span> {item.product.price.toFixed(2)}
             </span>
-          ) : null}
-        </p>
-      </div>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "h-8 w-8 p-0",
-            isSelected ? "text-white hover:bg-white/20" : "text-blue-600 hover:bg-blue-50"
-          )}
-          onClick={onImeiClick}
-          title="Saisir l'IMEI"
-        >
-          <Smartphone className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0"
-          onClick={() => onQuantityChange(item.quantity - 1)}
-        >
-          <Minus className="h-3 w-3" />
-        </Button>
-        <span className="w-6 text-center text-xs font-bold text-foreground">
-          {item.quantity}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0"
-          onClick={() => onQuantityChange(item.quantity + 1)}
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "h-8 w-8 p-0",
-            isSelected ? "text-white hover:bg-white/20" : "text-destructive hover:text-destructive hover:bg-destructive/10"
-          )}
-          onClick={onRemove}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+            {item.imei && (
+              <span className="flex items-center gap-1 text-[9px] font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded uppercase">
+                <Hash className="h-2.5 w-2.5" /> {item.imei}
+              </span>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className={cn(
+              "text-[13px] font-black tabular-nums",
+              isSelected ? "text-blue-700 dark:text-blue-400" : "text-foreground"
+            )}>
+              {(item.product.price * item.quantity).toFixed(2)}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 rounded-md hover:bg-slate-200 dark:hover:bg-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={onImeiClick}
+              title="Ajouter IMEI"
+            >
+              <Smartphone className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 group/trash opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={onRemove}
+              title="Supprimer"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-muted-foreground group-hover/trash:text-red-500 transition-colors" />
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

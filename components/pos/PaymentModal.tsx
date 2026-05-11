@@ -6,13 +6,13 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { PaymentMethods, OdooPaymentMethod } from './PaymentMethods';
 import { CashPayment } from './CashPayment';
 import { CardPayment } from './CardPayment';
 import { CartItem } from '@/lib/pos/types';
-import { recordAuditLog } from '@/lib/audit';
-import { Printer, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Printer, CheckCircle2, AlertCircle, RefreshCw, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface PaymentModalProps {
@@ -24,9 +24,10 @@ interface PaymentModalProps {
   customer: any | null;
   sessionId: string | null;
   uid: string | number | null;
-  actorName?: string | null;
   onClose: () => void;
   onPaymentComplete: (cartSnapshot: CartItem[], total: number) => void;
+  initialMethodId?: number | null;
+  imeiRequiredCategories?: string[];
 }
 
 export function PaymentModal({
@@ -38,16 +39,17 @@ export function PaymentModal({
   customer,
   sessionId,
   uid,
-  actorName,
   onClose,
   onPaymentComplete,
+  initialMethodId = null,
+  imeiRequiredCategories = [],
 }: PaymentModalProps) {
   const [paymentMethod, setPaymentMethod] = useState<OdooPaymentMethod | null>(null);
   const [methods, setMethods] = useState<OdooPaymentMethod[]>([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [pendingMethod, setPendingMethod] = useState<{ id: number; name: string, change?: number } | null>(null);
+  const [pendingMethod, setPendingMethod] = useState<{ id: number; name: string; change?: number } | null>(null);
   const [wantsInvoice, setWantsInvoice] = useState(true);
   const [receiptData, setReceiptData] = useState<{
     cartSnapshot: CartItem[];
@@ -57,9 +59,15 @@ export function PaymentModal({
     method: string;
     change?: number;
     timestamp: Date;
-    orderReference?: string;  // POS order name (e.g. Order 00001)
-    invoiceNumber?: string;   // Odoo accounting invoice (e.g. FINV/2026/00001)
+    orderReference?: string;
+    invoiceNumber?: string;
+    wantsInvoice: boolean;
   } | null>(null);
+
+  const missingImeiItems = cart.filter(item => 
+    (item.product.requiresImei || imeiRequiredCategories.includes(item.product.category)) && !item.imei
+  );
+  const hasMissingImeis = missingImeiItems.length > 0;
 
   useEffect(() => {
     if (open && sessionId) {
@@ -67,13 +75,22 @@ export function PaymentModal({
       fetch(`/api/odoo/payment-methods?session_id=${sessionId}`)
         .then((res) => res.json())
         .then((data) => {
-          if (data.methods) setMethods(data.methods);
+          if (data.methods && data.methods.length > 0) {
+            setMethods(data.methods);
+            if (initialMethodId) {
+              const initial = data.methods.find((m: any) => m.id === initialMethodId);
+              if (initial) setPaymentMethod(initial);
+            }
+          } else {
+            setMethods([]);
+          }
         })
         .catch((err) => console.error(err))
         .finally(() => setLoadingMethods(false));
     } else {
       setPaymentMethod(null);
       setPaymentError(null);
+      setReceiptData(null);
     }
   }, [open, sessionId]);
 
@@ -86,25 +103,21 @@ export function PaymentModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cart, total, tax, subtotal, customer, uid, paymentMethodId: methodId, wantsInvoice,
+          cart,
+          total: wantsInvoice ? total + 1 : total,
+          tax,
+          subtotal,
+          customer,
+          uid,
+          paymentMethodId: methodId,
+          wantsInvoice,
         }),
       });
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to create order');
+        throw new Error(data.error || 'Erreur lors de la création de la commande');
       }
-
-      // Record audit log for manager
-      const invoiceRef = data.order?.invoiceNumber || data.order?.reference || data.order?.name || 'Facture POS';
-      const customerName = customer?.name || 'Client comptoir';
-      await recordAuditLog({
-        action: 'created',
-        entityType: 'invoice',
-        entityName: invoiceRef,
-        actor: actorName,
-        details: `${customerName} - ${total.toFixed(2)} DT`,
-      });
 
       setReceiptData({
         cartSnapshot: [...cart],
@@ -114,16 +127,26 @@ export function PaymentModal({
         method: methodName,
         change,
         timestamp: new Date(),
-        orderReference:  data.order?.reference || data.order?.name,
-        invoiceNumber:   data.order?.invoiceNumber || null,
+        orderReference: data.order?.reference || data.order?.name,
+        invoiceNumber: data.order?.invoiceNumber || null,
+        wantsInvoice,
       });
       setPendingMethod(null);
     } catch (err: any) {
-      setPaymentError(err.message || 'Payment failed. Please try again.');
+      setPaymentError(err.message || 'Échec du paiement. Veuillez réessayer.');
     } finally {
       setIsProcessing(false);
     }
   };
+
+  useEffect(() => {
+    if (receiptData) {
+      const timer = setTimeout(() => {
+        handlePrintTicket();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [receiptData]);
 
   const handleRetry = () => {
     if (pendingMethod) {
@@ -140,468 +163,311 @@ export function PaymentModal({
     onClose();
   };
 
-  const handlePrintReceipt = () => {
+  const handlePrintFacture = () => {
     if (!receiptData) return;
 
     const storeName = process.env.NEXT_PUBLIC_STORE_NAME || 'GSM Store';
     const storeAddress = process.env.NEXT_PUBLIC_STORE_ADDRESS || '';
-    const storePhone = process.env.NEXT_PUBLIC_STORE_PHONE || '';
-    const storeTaxId = process.env.NEXT_PUBLIC_STORE_TAX_ID || '';
-    const storeWebsite = process.env.NEXT_PUBLIC_STORE_WEBSITE || '';
-    const storeEmail = process.env.NEXT_PUBLIC_STORE_EMAIL || '';
-    const logoLetters = storeName.substring(0, 2).toUpperCase();
-
-    const dateStr    = receiptData.timestamp.toLocaleDateString('fr-FR');
-    // Prefer the official Odoo accounting invoice number; fall back to POS reference
-    const orderRef    = receiptData.invoiceNumber || receiptData.orderReference || `FAC-${Date.now()}`;
-    const posRef      = receiptData.orderReference || '';
+    const dateStr = receiptData.timestamp.toLocaleDateString('fr-FR');
+    const orderRef = receiptData.invoiceNumber || receiptData.orderReference || `FAC-${Date.now()}`;
     const isOdooInvoice = !!receiptData.invoiceNumber;
-
-    const taxRate = 8; // percent shown on each line
+    const taxRate = 8;
 
     const itemRows = receiptData.cartSnapshot.map((item) => {
-      const originalTotal = item.product.price * item.quantity;
-      const lineTotal = item.discount
-        ? originalTotal * (1 - item.discount / 100)
-        : originalTotal;
-      const discountNote = item.discount ? ` <span style="color:#e53e3e;font-size:9px">(-${item.discount}%)</span>` : '';
+      const lineTotal = item.product.price * item.quantity * (1 - (item.discount || 0) / 100);
       return `
         <tr>
-          <td>${item.product.name}${discountNote}</td>
-          <td>${item.quantity.toFixed(2).replace('.', ',')} Unité(s)</td>
+          <td><div style="font-weight:600">${item.product.name}</div>${item.imei ? `<div style="font-size:9px;color:#3b82f6">IMEI: ${item.imei}</div>` : ''}</td>
+          <td>${item.quantity.toFixed(2).replace('.', ',')}</td>
           <td>${item.product.price.toFixed(2)}</td>
           <td>${taxRate}%</td>
           <td>${lineTotal.toFixed(2)} DT</td>
         </tr>`;
     }).join('');
 
-    const receiptSubtotal = receiptData.cartSnapshot.reduce((acc, item) => {
-      const lineTotal = item.product.price * item.quantity;
-      return acc + (item.discount ? lineTotal * (1 - item.discount / 100) : lineTotal);
-    }, 0);
-
-    const receiptHtml = `
+    const factureHtml = `
       <!DOCTYPE html>
-      <html lang="fr">
+      <html>
       <head>
         <title>Facture - ${orderRef}</title>
         <meta charset="UTF-8"/>
         <style>
-          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            font-family: 'Inter', Arial, sans-serif;
-            font-size: 11px;
-            color: #111;
-            padding: 32px 44px;
-            max-width: 820px;
-            margin: 0 auto;
-            background: #fff;
-          }
-
-          /* ── Header ────────────────────────────────── */
-          .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 36px;
-          }
-          .logo-block { display: flex; flex-direction: column; gap: 6px; }
-          .logo-circle {
-            width: 54px; height: 54px;
-            background: #1d4ed8;
-            color: #fff;
-            border-radius: 10px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 20px; font-weight: 700;
-            margin-bottom: 6px;
-          }
-          .store-name  { font-weight: 700; font-size: 13px; }
-          .store-meta  { color: #555; line-height: 1.7; font-size: 10.5px; margin-top: 4px; }
-          .customer-block { text-align: right; }
-          .customer-name  { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
-          .customer-meta  { color: #555; font-size: 10.5px; line-height: 1.7; }
-
-          /* ── Invoice title ──────────────────────────── */
-          .invoice-title {
-            font-size: 26px;
-            font-weight: 700;
-            color: #1d4ed8;
-            margin-bottom: 18px;
-            letter-spacing: -0.5px;
-          }
-          .divider-line { border: none; border-top: 1.5px solid #e2e8f0; margin: 0 0 16px; }
-
-          /* ── Meta row ───────────────────────────────── */
-          .meta-row { display: flex; gap: 48px; margin-bottom: 28px; }
-          .meta-col label { display: block; color: #888; font-size: 10px; margin-bottom: 3px; }
-          .meta-col span  { font-weight: 600; font-size: 11px; }
-
-          /* ── Table ──────────────────────────────────── */
-          table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-          thead tr { border-bottom: 2px solid #111; }
-          th {
-            padding: 9px 6px;
-            font-size: 10px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            color: #333;
-            text-align: right;
-          }
-          th:first-child { text-align: left; }
-          tbody tr:nth-child(even) { background: #f8fafc; }
-          td {
-            padding: 8px 6px;
-            font-size: 10.5px;
-            text-align: right;
-            border-bottom: 1px solid #eef0f3;
-            color: #222;
-          }
-          td:first-child { text-align: left; max-width: 320px; line-height: 1.4; }
-
-          /* ── Totals ─────────────────────────────────── */
-          .totals-wrapper { display: flex; justify-content: flex-end; margin-bottom: 32px; }
-          .totals-box { width: 280px; }
-          .totals-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 5px 0;
-            font-size: 11px;
-            border-bottom: 1px solid #eef0f3;
-          }
-          .totals-row.grand {
-            font-weight: 700;
-            font-size: 14px;
-            border-bottom: none;
-            border-top: 2px solid #111;
-            padding-top: 10px;
-            margin-top: 4px;
-          }
-          .totals-row.payment-method {
-            color: #555;
-            font-size: 10px;
-            border-bottom: none;
-            padding-top: 8px;
-          }
-          ${receiptData.change !== undefined && receiptData.change > 0 ? `
-          .totals-row.change { color: #16a34a; font-weight: 600; border-bottom: none; }` : ''}
-
-          /* ── Footer ─────────────────────────────────── */
-          .footer {
-            border-top: 1px solid #dde1e7;
-            padding-top: 12px;
-            text-align: center;
-            font-size: 9.5px;
-            color: #666;
-            line-height: 1.9;
-          }
-          .footer strong { color: #333; }
-
-          @media print {
-            body { padding: 20px 30px; }
-            @page { size: A4; margin: 12mm; }
-          }
+          body { font-family: 'Inter', Arial, sans-serif; font-size: 11px; padding: 32px 44px; max-width: 800px; margin: 0 auto; background: #fff; }
+          .header { display: flex; justify-content: space-between; margin-bottom: 30px; align-items: flex-start; }
+          .logo-container { display: flex; align-items: center; gap: 12px; }
+          .logo-img { height: 50px; width: auto; object-fit: contain; }
+          .title { font-size: 22px; font-weight: 700; margin-bottom: 20px; color: #1e293b; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+          th { text-align: left; padding: 10px 5px; border-bottom: 2px solid #e2e8f0; font-size: 9px; text-transform: uppercase; color: #64748b; }
+          td { padding: 10px 5px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+          .totals { margin-left: auto; width: 250px; }
+          .total-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+          .grand-total { font-size: 14px; font-weight: 700; border-bottom: none; color: #1d4ed8; }
+          @media print { body { padding: 0; } }
         </style>
       </head>
       <body>
-
-        <!-- ── Header ── -->
         <div class="header">
-          <div class="logo-block">
-            <div class="logo-circle">${logoLetters}</div>
-            <div class="store-name">${storeName}</div>
-            <div class="store-meta">
-              ${storeAddress.split(',').join('<br/>')}
-              ${storePhone ? '<br/>Tel: ' + storePhone : ''}
+          <div class="logo-container">
+            <img src="/gsmguidelogo.png" class="logo-img" onerror="this.style.display='none'"/>
+            <div>
+              <div style="font-weight:700; font-size: 16px; color: #1d4ed8;">${storeName}</div>
+              <div style="color: #64748b;">${storeAddress}</div>
             </div>
           </div>
-          ${customer ? `
-          <div class="customer-block">
-            <div class="customer-name">${customer.name}</div>
-            <div class="customer-meta">
-              ${customer.phone ? customer.phone + '<br/>' : ''}
-              ${customer.email ? customer.email + '<br/>' : ''}
-              ${customer.vat ? 'N° TVA: ' + customer.vat : ''}
-            </div>
-          </div>` : ''}
+          ${customer ? `<div style="text-align:right"><div style="font-weight:700; font-size: 14px;">${customer.name}</div></div>` : ''}
         </div>
-
-        <!-- ── Title ── -->
-        <div class="invoice-title">${isOdooInvoice ? 'Facture' : 'Reçu'} ${orderRef}</div>
-        ${isOdooInvoice && posRef ? `<div style="font-size:10px;color:#888;margin-top:-12px;margin-bottom:18px;">Réf. POS : ${posRef}</div>` : ''}
-        <hr class="divider-line"/>
-
-        <!-- ── Meta row ── -->
-        <div class="meta-row">
-          <div class="meta-col">
-            <label>Date de la facture :</label>
-            <span>${dateStr}</span>
-          </div>
-          <div class="meta-col">
-            <label>Date d'échéance :</label>
-            <span>${dateStr}</span>
-          </div>
-          <div class="meta-col">
-            <label>Mode de paiement :</label>
-            <span>${receiptData.method === 'cash' ? 'Espèces' : 'Carte bancaire'}</span>
-          </div>
-        </div>
-
-        <!-- ── Items table ── -->
+        <div class="title">${isOdooInvoice ? 'Facture' : 'Reçu'} ${orderRef}</div>
         <table>
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th>Quantité</th>
-              <th>Prix unitaire</th>
-              <th>Taxes</th>
-              <th>Montant</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemRows}
-          </tbody>
+          <thead><tr><th>Description</th><th>Qté</th><th>Prix HT</th><th>Tva</th><th>Total</th></tr></thead>
+          <tbody>${itemRows}</tbody>
         </table>
-
-        <!-- ── Totals ── -->
-        <div class="totals-wrapper">
-          <div class="totals-box">
-            <div class="totals-row">
-              <span>Sous-total HT</span>
-              <span>${receiptSubtotal.toFixed(2)} DT</span>
-            </div>
-            <div class="totals-row">
-              <span>TVA (${taxRate}%)</span>
-              <span>${receiptData.tax.toFixed(2)} DT</span>
-            </div>
-            <div class="totals-row grand">
-              <span>TOTAL TTC</span>
-              <span>${receiptData.total.toFixed(2)} DT</span>
-            </div>
-            ${receiptData.change !== undefined && receiptData.change > 0 ? `
-            <div class="totals-row change">
-              <span>Monnaie rendue</span>
-              <span>${receiptData.change.toFixed(2)} DT</span>
-            </div>` : ''}
-          </div>
+        <div class="totals">
+          <div class="total-row"><span>Sous-total</span><span>${receiptData.subtotal.toFixed(2)} DT</span></div>
+          ${isOdooInvoice || receiptData.wantsInvoice ? `<div class="total-row"><span>Timbre Fiscal</span><span>1,000 DT</span></div>` : ''}
+          <div class="total-row grand-total"><span>Total TTC</span><span>${(receiptData.total + (isOdooInvoice || receiptData.wantsInvoice ? 1 : 0)).toFixed(2)} DT</span></div>
         </div>
-
-        <!-- ── Footer ── -->
-        <div class="footer">
-          ${storeWebsite ? `<strong>${storeWebsite}</strong><br/>` : ''}
-          <strong>${storeName}</strong>
-          ${storeAddress ? ' — ' + storeAddress : ''}
-          ${storePhone ? ' — Tel: ' + storePhone : ''}
-          ${storeEmail ? ' — Email: ' + storeEmail : ''}
-          ${storeTaxId ? '<br/>' + storeTaxId : ''}
-        </div>
-
       </body>
       </html>
     `;
+    printHtml(factureHtml);
+  };
 
+  const handlePrintTicket = () => {
+    if (!receiptData) return;
+
+    const storeName = process.env.NEXT_PUBLIC_STORE_NAME || 'GSM Store';
+    const storeAddress = process.env.NEXT_PUBLIC_STORE_ADDRESS || '';
+    const dateStr = receiptData.timestamp.toLocaleString('fr-FR');
+    const orderRef = receiptData.orderReference || `REF-${Date.now()}`;
+
+    const itemRows = receiptData.cartSnapshot.map((item) => {
+      const lineTotal = item.product.price * item.quantity * (1 - (item.discount || 0) / 100);
+      return `
+        <div class="ticket-row"><span class="item-name">${item.product.name}</span><span>${lineTotal.toFixed(2)}</span></div>
+        ${item.imei ? `<div class="ticket-row-meta" style="font-weight:bold">IMEI: ${item.imei}</div>` : ''}
+        <div class="ticket-row-meta"><span>${item.quantity.toFixed(0)} x ${item.product.price.toFixed(2)}</span></div>`;
+    }).join('');
+
+    const ticketHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Ticket - ${orderRef}</title>
+        <meta charset="UTF-8"/>
+        <style>
+          body { font-family: 'Courier New', Courier, monospace; font-size: 13px; width: 80mm; padding: 5mm; }
+          .center { text-align: center; }
+          .bold { font-weight: bold; }
+          .divider { border-top: 1px dashed #000; margin: 3mm 0; }
+          .ticket-row { display: flex; justify-content: space-between; margin-top: 2mm; }
+          .ticket-row-meta { font-size: 11px; margin-bottom: 1mm; }
+          .logo-ticket { max-width: 40mm; height: auto; margin-bottom: 3mm; }
+          @media print { body { width: 80mm; padding: 2mm; } }
+        </style>
+      </head>
+      <body>
+        <div class="center">
+          <img src="/gsmguidelogo.png" class="logo-ticket" onerror="this.style.display='none'"/>
+          <div class="bold" style="font-size:16px">${storeName}</div>
+          <div>${storeAddress}</div>
+          <div class="divider"></div>
+          <div>TICKET DE CAISSE</div>
+          <div class="bold">${orderRef}</div>
+          <div>${dateStr}</div>
+          <div>Mode: ${receiptData.method}</div>
+        </div>
+        <div class="divider"></div>
+        <div>${itemRows}</div>
+        <div class="divider"></div>
+        ${receiptData.wantsInvoice ? `<div class="ticket-row"><span>Timbre Fiscal</span><span>1.000 DT</span></div>` : ''}
+        <div class="ticket-row bold"><span>TOTAL</span><span>${(receiptData.total + (receiptData.wantsInvoice ? 1 : 0)).toFixed(2)} DT</span></div>
+        ${receiptData.change ? `<div class="ticket-row"><span>RENDU</span><span>${receiptData.change.toFixed(2)} DT</span></div>` : ''}
+        <div class="divider"></div>
+        <div class="center" style="margin-top:5mm">Merci de votre visite !</div>
+      </body>
+      </html>
+    `;
+    printHtml(ticketHtml);
+  };
+
+  const printHtml = (html: string) => {
     const iframe = document.createElement('iframe');
-    // Important: Do not use display: none, otherwise Firefox/Chrome will ignore print()
-    iframe.style.position = 'absolute';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
-    iframe.style.border = 'none';
-    iframe.style.left = '-9999px';
+    iframe.style.position = 'absolute'; iframe.style.width = '0px'; iframe.style.height = '0px'; iframe.style.border = 'none'; iframe.style.left = '-9999px';
     document.body.appendChild(iframe);
-    
     if (iframe.contentWindow) {
-      iframe.contentWindow.document.open();
-      iframe.contentWindow.document.write(receiptHtml);
-      iframe.contentWindow.document.close();
+      iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
       iframe.contentWindow.focus();
-      
-      // Delay printing slightly to ensure styles/fonts are loaded
-      setTimeout(() => {
-        iframe.contentWindow?.print();
-        setTimeout(() => {
-          document.body.removeChild(iframe);
-        }, 1000);
-      }, 500);
-    } else {
-      // Fallback
-      document.body.removeChild(iframe);
-      window.print();
+      setTimeout(() => { iframe.contentWindow?.print(); setTimeout(() => document.body.removeChild(iframe), 1000); }, 500);
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={() => { if (!receiptData) onClose(); }}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="text-2xl">Payment</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-6">
-          {/* ── Processing Screen ── */}
-          {isProcessing ? (
-            <div className="flex flex-col items-center justify-center p-8 gap-4">
-              <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-              <p className="text-lg font-medium text-foreground">Processing Payment...</p>
-              <p className="text-sm text-muted-foreground text-center">
-                Please wait while we confirm the order with Odoo.
-              </p>
+      <DialogContent showCloseButton={true} className="sm:max-w-[1000px] w-[95vw] h-[85vh] p-0 overflow-hidden border border-border bg-white dark:bg-zinc-900 rounded-xl shadow-2xl flex flex-col md:flex-row gap-0">
+        
+        {/* Left Summary Panel - White */}
+        <div className="w-full md:w-[320px] bg-white dark:bg-zinc-900 p-8 border-r border-border flex flex-col flex-shrink-0">
+          <DialogTitle className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground mb-8">Résumé</DialogTitle>
+          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-6">
+            {cart.map((item) => (
+              <div key={item.product.id} className="space-y-1 pb-4 border-b border-border/50">
+                <div className="flex justify-between items-start gap-4">
+                  <p className="text-[14px] font-bold text-foreground leading-tight flex-1">{item.product.name}</p>
+                  <span className="text-[14px] font-bold text-foreground tabular-nums">{(item.product.price * item.quantity).toFixed(2)}</span>
+                </div>
+                <p className="text-[12px] text-muted-foreground font-medium">Qté: {item.quantity}</p>
+              </div>
+            ))}
+          </div>
+          
+          <div className="mt-8 space-y-3 pt-6 border-t border-border">
+            <div className="flex justify-between items-center text-[12px] font-bold uppercase tracking-wider text-muted-foreground">
+              <span>Sous-total</span>
+              <span className="tabular-nums">{total.toFixed(2)} DT</span>
             </div>
+            
+            {wantsInvoice && (
+              <div className="flex justify-between items-center text-[12px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                <span>Timbre Fiscal</span>
+                <span className="tabular-nums">1.000 DT</span>
+              </div>
+            )}
 
-          ) : paymentError ? (
-            /* ── Error Screen ── */
-            <div className="flex flex-col items-center gap-4 py-4">
-              <div className="rounded-full bg-red-100 dark:bg-red-950/40 p-3">
-                <AlertCircle className="h-10 w-10 text-red-500" />
-              </div>
-              <h3 className="text-lg font-bold text-foreground">Payment Failed</h3>
-              <div className="w-full rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 px-4 py-3 text-sm text-red-700 dark:text-red-400 text-center leading-relaxed">
-                {paymentError}
-              </div>
-              <div className="flex gap-3 w-full mt-1">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setPaymentError(null);
-                    setPendingMethod(null);
-                    setPaymentMethod(null);
-                  }}
-                  className="flex-1 h-11"
-                >
-                  Go Back
-                </Button>
-                <Button
-                  onClick={handleRetry}
-                  className="flex-1 h-11 gap-2 bg-primary"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Retry
-                </Button>
+            <div className="pt-4 flex justify-between items-end">
+              <span className="text-[12px] font-black uppercase tracking-widest text-foreground">Total à Payer</span>
+              <div className="text-right">
+                <span className="text-4xl font-black text-blue-600 tabular-nums">
+                   {(total + (wantsInvoice ? 1 : 0)).toFixed(2)}
+                </span>
+                <span className="text-sm font-bold text-blue-600 ml-1">DT</span>
               </div>
             </div>
+          </div>
+        </div>
 
-          ) : receiptData ? (
-            /* ── Receipt / Success Screen ── */
-            <div className="flex flex-col items-center gap-4 py-4">
-              <CheckCircle2 className="h-14 w-14 text-green-500" />
-              <h3 className="text-xl font-bold text-foreground">Payment Complete!</h3>
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col bg-white dark:bg-zinc-900 overflow-hidden relative">
+          {!receiptData && !isProcessing && !paymentError && (
+            <div className="px-10 pt-10 pb-6 flex-shrink-0">
+              <h2 className="text-2xl font-bold text-foreground tracking-tight">Paiement</h2>
+              <DialogDescription className="text-sm text-muted-foreground mt-2">
+                Choisissez un mode de paiement pour finaliser la commande.
+              </DialogDescription>
+              <div className="h-px bg-border/50 w-full mt-6" />
+            </div>
+          )}
 
-              {/* Mini receipt preview */}
-              <div className="w-full rounded-xl border border-border bg-secondary/50 p-4 space-y-2 text-sm overflow-y-auto max-h-[40vh]">
-                <div className="text-center border-b pb-2 mb-2 space-y-0.5">
-                  <div className="font-semibold text-base">
-                    {receiptData.invoiceNumber || receiptData.orderReference || 'Receipt'}
+          {/* Accessibility fallbacks */}
+          {(receiptData || isProcessing || paymentError) && (
+            <div className="sr-only">
+              <DialogTitle>Traitement du paiement</DialogTitle>
+              <DialogDescription>Détails de la transaction en cours.</DialogDescription>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto px-10 pb-10 custom-scrollbar">
+            {isProcessing ? (
+              <div className="flex flex-col items-center justify-center h-full gap-6 animate-in fade-in zoom-in duration-300 py-20">
+                <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+                <p className="text-[12px] font-bold text-muted-foreground uppercase tracking-widest">Synchronisation Odoo...</p>
+              </div>
+            ) : paymentError ? (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-center py-20">
+                <div className="p-4 bg-red-100 dark:bg-red-900/20 rounded-full">
+                  <AlertCircle className="h-10 w-10 text-red-600" />
+                </div>
+                <h3 className="text-sm font-bold uppercase">Transaction échouée</h3>
+                <p className="text-xs text-muted-foreground max-w-xs">{paymentError}</p>
+                <Button onClick={handleRetry} className="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-widest px-8 h-12">Réessayer</Button>
+              </div>
+            ) : receiptData ? (
+              <div className="flex flex-col gap-8 animate-in slide-in-from-bottom-4 duration-500 py-6">
+                <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20 rounded-xl p-8 flex items-center gap-6">
+                  <div className="p-3 bg-emerald-500 rounded-full flex-shrink-0">
+                    <CheckCircle2 className="h-8 w-8 text-white" />
                   </div>
-                  {receiptData.invoiceNumber && (
-                    <div className="text-[10px] text-emerald-600 font-medium">✓ Facture Odoo enregistrée</div>
-                  )}
-                  {receiptData.invoiceNumber && receiptData.orderReference && (
-                    <div className="text-[10px] text-muted-foreground">Réf. POS: {receiptData.orderReference}</div>
-                  )}
+                  <div>
+                    <h4 className="text-xl font-bold text-emerald-900 dark:text-emerald-400">Paiement Validé</h4>
+                    <p className="text-xs font-medium text-emerald-600 mt-1 opacity-70">Réf: {receiptData.invoiceNumber || receiptData.orderReference}</p>
+                  </div>
                 </div>
-                {receiptData.cartSnapshot.map((item) => {
-                  const originalLineTotal = item.product.price * item.quantity;
-                  const lineTotal = item.discount
-                    ? originalLineTotal * (1 - item.discount / 100)
-                    : originalLineTotal;
-                  return (
-                    <div key={item.product.id} className="flex justify-between">
-                      <span className="text-muted-foreground truncate max-w-[180px]">
-                        {item.product.name}{' '}
-                        <span className="text-xs">x{item.quantity}</span>
-                        {item.discount ? (
-                          <span className="text-[10px] ml-1 text-emerald-500">
-                            (-{item.discount}%)
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="font-medium">{lineTotal.toFixed(2)} DT</span>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Button onClick={handlePrintFacture} className="h-16 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-widest flex items-center gap-3 rounded-xl shadow-lg">
+                    <Printer className="h-5 w-5" /> Facture Odoo
+                  </Button>
+                  <Button onClick={handlePrintTicket} className="h-16 bg-slate-900 dark:bg-zinc-800 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-widest flex items-center gap-3 rounded-xl shadow-lg">
+                    <Printer className="h-5 w-5" /> Ticket de Caisse
+                  </Button>
+                </div>
+                <Button variant="outline" onClick={handleDone} className="h-12 w-full text-[10px] font-bold uppercase tracking-widest rounded-xl border-border">Terminer la session</Button>
+              </div>
+            ) : paymentMethod === null ? (
+              <div className="animate-in fade-in duration-300 pb-10">
+                {hasMissingImeis && (
+                  <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/30 rounded-xl flex items-start gap-4">
+                    <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-900 dark:text-amber-400">IMEI Requis</p>
+                      <p className="text-xs text-amber-700 dark:text-amber-500 mt-1">
+                        Les articles suivants nécessitent un numéro IMEI avant de procéder au paiement :
+                        <ul className="list-disc list-inside mt-2 font-bold">
+                          {missingImeiItems.map(item => (
+                            <li key={item.product.id}>{item.product.name}</li>
+                          ))}
+                        </ul>
+                      </p>
                     </div>
-                  );
-                })}
-                <div className="border-t border-border pt-2 flex justify-between font-bold text-base">
-                  <span>Total</span>
-                  <span>{receiptData.total.toFixed(2)} DT</span>
-                </div>
-                {receiptData.change !== undefined && receiptData.change > 0 && (
-                  <div className="flex justify-between text-green-600 font-medium">
-                    <span>Change</span>
-                    <span>{receiptData.change.toFixed(2)} DT</span>
                   </div>
                 )}
-                <div className="flex justify-between text-xs text-muted-foreground pt-1">
-                  <span>{receiptData.method.toUpperCase()}</span>
-                  <span>{receiptData.timestamp.toLocaleTimeString()}</span>
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div className="flex gap-3 w-full mt-4">
-                <Button
-                  id="btn-print-receipt"
-                  onClick={handlePrintReceipt}
-                  className="flex-1 h-12 gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-md"
-                >
-                  <Printer className="h-5 w-5" />
-                  Imprimer Facture
-                </Button>
-                <Button
-                  id="btn-done-payment"
-                  variant="outline"
-                  onClick={handleDone}
-                  className="flex-base h-12 px-8 font-semibold"
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-
-          ) : paymentMethod === null ? (
-            /* ── Method Selection ── */
-            <>
-              <div className="text-center">
-                <p className="text-sm text-muted-foreground mb-2">Total Amount</p>
-                <p className="text-4xl font-bold text-accent">
-                  {total.toFixed(2)} DT
-                </p>
-              </div>
-              <PaymentMethods
-                methods={methods}
-                isLoading={loadingMethods}
-                onMethodSelect={(method) => setPaymentMethod(method)}
-              />
-              <div className="mt-4 border-t pt-4">
-                <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/30 border-2 border-dashed border-border hover:border-primary transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Printer className={`h-4 w-4 ${wantsInvoice ? 'text-primary' : 'text-muted-foreground'}`} />
-                    <p className="text-sm font-bold">Créer Facture Odoo</p>
+                
+                <PaymentMethods 
+                  methods={methods} 
+                  isLoading={loadingMethods} 
+                  onMethodSelect={(method) => {
+                    if (!hasMissingImeis) setPaymentMethod(method);
+                  }}
+                  disabled={hasMissingImeis}
+                />
+                
+                <div className="mt-8 pt-8 border-t border-border">
+                  <div className="flex items-center justify-between p-5 rounded-xl border border-border bg-slate-50/50 dark:bg-zinc-800/20">
+                    <div className="flex items-center gap-4">
+                      <Printer className="h-5 w-5 text-blue-600" />
+                      <div>
+                        <p className="text-sm font-bold text-foreground">Facture Client Odoo</p>
+                        <p className="text-[10px] text-muted-foreground font-medium italic">Inclut le timbre fiscal (+1.000 DT)</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setWantsInvoice(!wantsInvoice)} 
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${wantsInvoice ? 'bg-blue-600' : 'bg-slate-300 dark:bg-zinc-600'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-all ${wantsInvoice ? 'translate-x-6 shadow-md' : 'translate-x-1'}`} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setWantsInvoice(!wantsInvoice)}
-                    className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors ${wantsInvoice ? 'bg-primary' : 'bg-muted'}`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${wantsInvoice ? 'translate-x-5' : 'translate-x-1'}`} />
-                  </button>
                 </div>
               </div>
-            </>
-
-          ) : paymentMethod.isCash ? (
-            /* ── Cash Payment ── */
-            <CashPayment
-              total={total}
-              onPaymentComplete={(change) => handlePaymentComplete(paymentMethod.id, paymentMethod.name, change)}
-              onBack={() => setPaymentMethod(null)}
-            />
-          ) : (
-            /* ── Card/Other Payment ── */
-            <CardPayment
-              total={total}
-              paymentMethodName={paymentMethod.name}
-              onPaymentComplete={() => handlePaymentComplete(paymentMethod.id, paymentMethod.name)}
-              onBack={() => setPaymentMethod(null)}
-            />
-          )}
+            ) : paymentMethod.isCash ? (
+              <div className="h-full">
+                 <CashPayment 
+                  total={total + (wantsInvoice ? 1 : 0)} 
+                  onPaymentComplete={(change) => handlePaymentComplete(paymentMethod.id, paymentMethod.name, change)} 
+                  onBack={() => setPaymentMethod(null)} 
+                 />
+              </div>
+            ) : (
+              <div className="h-full">
+                 <CardPayment 
+                  total={total + (wantsInvoice ? 1 : 0)} 
+                  paymentMethodName={paymentMethod.name} 
+                  onPaymentComplete={() => handlePaymentComplete(paymentMethod.id, paymentMethod.name)} 
+                  onBack={() => setPaymentMethod(null)} 
+                 />
+              </div>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

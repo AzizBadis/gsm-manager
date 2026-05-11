@@ -42,6 +42,11 @@ export const ProductCard = React.memo(function ProductCard({
         <h3 className="text-xs font-semibold leading-tight text-foreground line-clamp-2">
           {product.name}
         </h3>
+        {product.defaultCode && (
+          <p className="text-[10px] text-muted-foreground font-medium mt-0.5 truncate">
+            {product.defaultCode}
+          </p>
+        )}
         <p className="mt-auto text-sm font-bold text-accent group-hover:text-accent/80 transition-colors">
           {product.price.toFixed(2)} DT
         </p>

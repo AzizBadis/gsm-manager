@@ -8,7 +8,7 @@ import { ProductGrid } from '@/components/pos/ProductGrid';
 import { OrderPanel } from '@/components/pos/OrderPanel';
 import { BottomActions } from '@/components/pos/BottomActions';
 import { PaymentModal } from '@/components/pos/PaymentModal';
-import { Numberpad } from '@/components/pos/Numberpad';
+import { Numberpad, PadMode } from '@/components/pos/Numberpad';
 import { SearchBar } from '@/components/pos/SearchBar';
 import { CategoriesSidebar } from '@/components/pos/CategoriesSidebar';
 import { usePOSState } from '@/hooks/usePOSState';
@@ -23,6 +23,7 @@ import { CustomerModal } from '@/components/pos/CustomerModal';
 import { ClosureModal } from '@/components/pos/ClosureModal';
 import { RefundModal } from '@/components/pos/RefundModal';
 import { ImeiModal } from '@/components/pos/ImeiModal';
+import { ExpensesModal } from '@/components/pos/ExpensesModal';
 
 export default function Home() {
   const router = useRouter();
@@ -36,15 +37,16 @@ export default function Home() {
   } = useOdooProducts();
 
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [quickPayId, setQuickPayId] = useState<number | null>(null);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [closureModalOpen, setClosureModalOpen] = useState(false);
+  const [expensesModalOpen, setExpensesModalOpen] = useState(false);
   const [refundModalOpen, setRefundModalOpen] = useState(false);
   const [imeiModalOpen, setImeiModalOpen] = useState(false);
   const [numberpadValue, setNumberpadValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
-  const [sidebarMode, setSidebarMode] = useState<'edit' | 'confirm'>('edit');
-  const [padMode, setPadMode] = useState<'qty' | 'disc'>('qty');
+  const [padMode, setPadMode] = useState<PadMode>('qty');
 
   const {
     cart,
@@ -75,11 +77,13 @@ export default function Home() {
       const stillExists = categories.some((c) => c.id === activeCategory);
       if (!stillExists) setActiveCategory('all');
     }
-  }, [categories]);
+  }, [categories, activeCategory]);
 
   // Filter products by active category AND search query
   const filteredProducts = products.filter((product) => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = 
+      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (product.defaultCode && product.defaultCode.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCategory =
       activeCategory === 'all' || product.category === activeCategory;
     return matchesSearch && matchesCategory;
@@ -88,18 +92,22 @@ export default function Home() {
   const handleProductClick = (product: any) => {
     addToCart(product);
     setSelectedProductId(product.id);
-    setSidebarMode('edit');
     setNumberpadValue('');
-    toast({
-      description: `${product.name} ajouté — ${product.price.toFixed(2)} DT`,
-      duration: 2000,
-    });
+    
+    if (product.requiresImei) {
+      setImeiModalOpen(true);
+    } else {
+      toast({
+        description: `${product.name} ajouté — ${product.price.toFixed(2)} DT`,
+        duration: 2000,
+      });
+    }
   };
 
   const handlePaymentComplete = (cartSnapshot: any[], orderTotal: number) => {
     toast({
-      title: 'Payment Successful',
-      description: 'Thank you for your purchase!',
+      title: 'Paiement Réussi',
+      description: 'Merci pour votre achat !',
       duration: 3000,
     });
     clearCart();
@@ -108,15 +116,17 @@ export default function Home() {
   };
 
   const handleClear = () => {
-    if (cart.length > 0 && confirm('Voulez-vous vider le panier ?')) {
-      clearCart();
-      setNumberpadValue('');
-      setSelectedProductId(null);
-      setSidebarMode('edit');
-      toast({
-        description: 'Panier vidé',
-        duration: 2000,
-      });
+    setNumberpadValue('');
+    setSelectedProductId(null);
+    
+    if (cart.length > 0) {
+      if (confirm('Voulez-vous vider le panier ?')) {
+        clearCart();
+        toast({
+          description: 'Panier vidé',
+          duration: 2000,
+        });
+      }
     }
   };
 
@@ -160,7 +170,7 @@ export default function Home() {
   };
 
   const handleNumberpadClear = () => {
-    setNumberpadValue('');
+    handleClear();
   };
 
   const handleNumberpadSubmit = () => {
@@ -191,6 +201,10 @@ export default function Home() {
         applyItemDiscount(selectedProductId, val);
         toast({ description: `Remise appliquée : ${val} DT` });
       }
+    } else if (padMode === 'price') {
+      // In this POS, we don't have direct price override via numberpad yet, 
+      // but we can add it here if needed.
+      toast({ description: `Nouveau prix : ${val} DT (Non implémenté)` });
     }
 
     setNumberpadValue('');
@@ -198,7 +212,7 @@ export default function Home() {
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      if (paymentOpen) return;
+      if (paymentOpen || customerModalOpen || closureModalOpen || expensesModalOpen || refundModalOpen || imeiModalOpen) return;
 
       if (/^[0-9]$/.test(e.key)) {
         handleNumberpadDigit(e.key);
@@ -228,7 +242,7 @@ export default function Home() {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [paymentOpen, cart.length, numberpadValue]);
+  }, [paymentOpen, customerModalOpen, closureModalOpen, expensesModalOpen, refundModalOpen, imeiModalOpen, cart.length, numberpadValue, handleClear, handleNumberpadBackspace, handleNumberpadClear, handleNumberpadDigit, handleNumberpadSubmit]);
 
   // Show loading while checking auth
   if (authLoading) {
@@ -249,9 +263,10 @@ export default function Home() {
       <POSLayout
         topBar={
           <TopBar
-            companyName={user?.company_name || 'COMPANY'}
             cashierName={user?.name || 'Cashier'}
             onLogout={handleLogout}
+            onClosure={() => setClosureModalOpen(true)}
+            onExpenses={() => setExpensesModalOpen(true)}
           />
         }
         categoriesSidebar={
@@ -270,13 +285,13 @@ export default function Home() {
           productsLoading ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Loading products from Odoo...</p>
+              <p className="text-sm text-muted-foreground">Chargement des articles...</p>
             </div>
           ) : productsError ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-4">
               <WifiOff className="h-10 w-10 text-muted-foreground" />
               <div className="text-center">
-                <p className="text-sm font-medium text-foreground">Failed to load products</p>
+                <p className="text-sm font-medium text-foreground">Échec du chargement</p>
                 <p className="text-xs text-muted-foreground mt-1">{productsError}</p>
               </div>
               <button
@@ -284,7 +299,7 @@ export default function Home() {
                 className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
               >
                 <RefreshCw className="h-4 w-4" />
-                Retry
+                Réessayer
               </button>
             </div>
           ) : (
@@ -298,7 +313,6 @@ export default function Home() {
           <OrderPanel
             items={cart}
             total={total}
-            mode={sidebarMode}
             selectedProductId={selectedProductId}
             onSelectItem={(id) => {
               setSelectedProductId(id);
@@ -310,18 +324,21 @@ export default function Home() {
               setPadMode('qty');
               setNumberpadValue('');
             }}
+            onPriceSelectItem={(id) => {
+              setSelectedProductId(id);
+              setPadMode('price');
+              setNumberpadValue('');
+            }}
             onImeiSelectItem={(id) => {
               setSelectedProductId(id);
               setImeiModalOpen(true);
             }}
-            onConfirmArticles={() => {
-              setSidebarMode('confirm');
-              setSelectedProductId(null);
-            }}
-            onBackToEdit={() => setSidebarMode('edit')}
             onQuantityChange={updateQuantity}
             onRemoveItem={removeFromCart}
-            onPayClick={() => setPaymentOpen(true)}
+            onPayClick={() => {
+              setQuickPayId(null);
+              setPaymentOpen(true);
+            }}
           />
         }
         numberpad={
@@ -333,7 +350,7 @@ export default function Home() {
                 if (val) setActiveCategory('all'); // reset category filter when typing
               }}
               onClear={() => setSearchQuery('')}
-              placeholder="Search products..."
+              placeholder="Rechercher un article..."
             />
             <Numberpad
               onNumber={handleNumberpadDigit}
@@ -359,7 +376,6 @@ export default function Home() {
               }
             }}
             onRetour={() => setRefundModalOpen(true)}
-            onClosure={() => setClosureModalOpen(true)}
             onClear={handleClear}
             disabled={cart.length === 0}
           />
@@ -374,10 +390,10 @@ export default function Home() {
         cart={cart}
         customer={customer}
         uid={user?.uid || null}
-        actorName={user?.name || null}
         sessionId={sessionId}
         onClose={() => setPaymentOpen(false)}
         onPaymentComplete={handlePaymentComplete}
+        initialMethodId={quickPayId}
       />
 
       <CustomerModal
@@ -385,7 +401,7 @@ export default function Home() {
         onClose={() => setCustomerModalOpen(false)}
         onCustomerSelect={(c) => {
           setCustomer(c);
-          toast({ description: `Customer ${c.name} selected`, duration: 2000 });
+          toast({ description: `Client ${c.name} sélectionné`, duration: 2000 });
         }}
       />
 
@@ -393,6 +409,7 @@ export default function Home() {
         open={imeiModalOpen}
         onClose={() => setImeiModalOpen(false)}
         cart={cart}
+        defaultProductId={selectedProductId}
         onApplyImei={(productId, imei) => {
           updateImei(productId, imei);
           toast({ description: `IMEI enregistré : ${imei}` });
@@ -403,6 +420,12 @@ export default function Home() {
         open={closureModalOpen}
         onClose={() => setClosureModalOpen(false)}
         onSuccess={handleClosureSuccess}
+        sessionId={sessionId}
+      />
+
+      <ExpensesModal
+        open={expensesModalOpen}
+        onClose={() => setExpensesModalOpen(false)}
         sessionId={sessionId}
       />
 

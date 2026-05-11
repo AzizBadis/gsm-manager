@@ -1,7 +1,5 @@
-'use client';
-
 import { Button } from '@/components/ui/button';
-import { CreditCard } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 interface PayButtonProps {
   total: number;
@@ -14,10 +12,9 @@ export function PayButton({ total, disabled = false, onClick }: PayButtonProps) 
     <Button
       onClick={onClick}
       disabled={disabled}
-      className="h-12 w-full bg-accent text-accent-foreground hover:bg-accent/90 text-base font-bold"
+      className="h-12 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-widest rounded-lg shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2"
     >
-      <CreditCard className="mr-2 h-5 w-5" />
-      Pay {total.toFixed(2)} DT
+      Paiement <ArrowRight className="h-4 w-4" />
     </Button>
   );
 }

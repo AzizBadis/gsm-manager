@@ -22,7 +22,7 @@ export function usePOSState() {
 
   const updateQuantity = (productId: string, quantity: number) => {
     setCart((prev) =>
-      quantity <= 0
+      quantity === 0
         ? prev.filter((item) => item.product.id !== productId)
         : prev.map((item) =>
             item.product.id === productId ? { ...item, quantity } : item
@@ -32,17 +32,13 @@ export function usePOSState() {
 
   const removeFromCart = (productId: string) => {
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
-    if (selectedProductId === productId) {
-      setSelectedProductId(null);
-    }
   };
 
-  // Set absolute DT discount amount (not cumulative — replaces existing)
   const applyItemDiscount = (productId: string, amount: number) => {
     setCart((prev) =>
       prev.map((item) =>
-        item.product.id === productId
-          ? { ...item, discountAmount: amount }
+        item.product.id === productId 
+          ? { ...item, discountAmount: amount } 
           : item
       )
     );
@@ -59,7 +55,6 @@ export function usePOSState() {
   const clearCart = () => {
     setCart([]);
     setCustomer(null);
-    setSelectedProductId(null);
   };
 
   return {

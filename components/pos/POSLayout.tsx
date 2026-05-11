@@ -20,12 +20,12 @@ export function POSLayout({
   bottomActions,
 }: POSLayoutProps) {
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-[100dvh] flex-col bg-background overflow-hidden select-none">
       {/* Top Bar */}
       {topBar}
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden gap-4 p-4">
+      <div className="flex flex-1 overflow-hidden gap-2 p-2">
         {/* Categories Sidebar (optional) */}
         {categoriesSidebar && (
           <div className="flex-shrink-0 overflow-hidden">
@@ -39,14 +39,14 @@ export function POSLayout({
         </div>
 
         {/* Right Panel: Order + Numberpad */}
-        <div className="flex flex-col gap-4 w-96">
+        <div className="flex flex-col gap-2 w-[420px] h-full overflow-hidden">
           {/* Order Summary Panel */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 min-h-[200px] overflow-hidden">
             {orderPanel}
           </div>
 
           {/* Numberpad */}
-          <div className="flex-shrink-0">
+          <div className="h-[460px] flex-shrink-0">
             {numberpad}
           </div>
         </div>

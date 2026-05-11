@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     if (!sessionId) return NextResponse.json({ error: 'Missing session_id' }, { status: 401 });
 
     const body = await request.json();
-    const { name, list_price, standard_price, barcode, description_sale, pos_categ_id } = body;
+    const { name, list_price, standard_price, barcode, default_code, description_sale, pos_categ_id } = body;
 
     if (!name || !list_price) {
       return NextResponse.json({ error: 'Name and sale price are required' }, { status: 400 });
@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
       type: 'consu', // consumable product — fits GSM store parts
     };
     if (barcode) vals.barcode = barcode;
+    if (default_code) vals.default_code = default_code;
     if (description_sale) vals.description_sale = description_sale;
     if (pos_categ_id) vals.pos_categ_ids = [[6, 0, [parseInt(pos_categ_id)]]];
 
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
         method: 'read',
         args: [[newId]],
         kwargs: {
-          fields: ['id', 'name', 'list_price', 'standard_price', 'pos_categ_ids', 'barcode', 'description_sale', 'available_in_pos', 'image_128'],
+          fields: ['id', 'name', 'list_price', 'standard_price', 'pos_categ_ids', 'barcode', 'default_code', 'description_sale', 'available_in_pos', 'image_128'],
         },
       },
       sessionId
@@ -117,7 +118,7 @@ export async function PATCH(request: NextRequest) {
     if (!sessionId) return NextResponse.json({ error: 'Missing session_id' }, { status: 401 });
 
     const body = await request.json();
-    const { id, name, list_price, standard_price, barcode, description_sale, pos_categ_id, available_in_pos } = body;
+    const { id, name, list_price, standard_price, barcode, default_code, description_sale, pos_categ_id, available_in_pos } = body;
 
     if (!id) return NextResponse.json({ error: 'Product id is required' }, { status: 400 });
 
@@ -126,6 +127,7 @@ export async function PATCH(request: NextRequest) {
     if (list_price !== undefined) vals.list_price = parseFloat(list_price);
     if (standard_price !== undefined) vals.standard_price = parseFloat(standard_price);
     if (barcode !== undefined) vals.barcode = barcode || false;
+    if (default_code !== undefined) vals.default_code = default_code || false;
     if (description_sale !== undefined) vals.description_sale = description_sale || false;
     if (available_in_pos !== undefined) vals.available_in_pos = available_in_pos;
     if (pos_categ_id !== undefined) vals.pos_categ_ids = [[6, 0, pos_categ_id ? [parseInt(pos_categ_id)] : []]];

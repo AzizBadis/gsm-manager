@@ -7,6 +7,9 @@ export interface Category {
 export interface Product {
   id: string;
   odooId?: number;
+  productTemplateId?: number;
+  productCategoryName?: string;
+  requiresImei?: boolean;
   name: string;
   category: string;
   price: number;
@@ -14,6 +17,7 @@ export interface Product {
   description?: string;
   barcode?: string;
   costPrice?: number;
+  defaultCode?: string;
 }
 
 export interface CartItem {

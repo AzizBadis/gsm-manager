@@ -11,21 +11,24 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Calculator,
-  AlertTriangle,
-  CheckCircle2,
-  Loader2,
-  Wallet,
-  TrendingUp,
+import { 
+  Calculator, 
+  AlertTriangle, 
+  CheckCircle2, 
+  Loader2, 
+  Wallet, 
+  TrendingUp, 
   History,
-  Printer
+  Info,
+  Printer,
+  X,
+  ArrowRight
 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 interface ClosureSummary {
   id: number;
   name: string;
-  cashierName?: string;
   opened_at: string;
   opening_balance: number;
   total_payments: number;
@@ -51,6 +54,7 @@ export function ClosureModal({ open, onClose, onSuccess, sessionId }: ClosureMod
   const [isClosing, setIsClosing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDone, setIsDone] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (open && sessionId) {
@@ -59,6 +63,7 @@ export function ClosureModal({ open, onClose, onSuccess, sessionId }: ClosureMod
       setSummary(null);
       setRealCash('');
       setError(null);
+      setIsDone(false);
     }
   }, [open, sessionId]);
 
@@ -72,12 +77,12 @@ export function ClosureModal({ open, onClose, onSuccess, sessionId }: ClosureMod
         setSummary(data.summary);
         setRealCash('');
       } else if (data.no_active_pos_session) {
-        setError('Aucune session POS ouverte trouvée dans Odoo. Assurez-vous qu\'une session caissier est active.');
+        setError("Aucune session POS active trouvée.");
       } else {
-        setError(data.error || 'Impossible de récupérer le résumé de la session.');
+        setError(data.error || "Erreur de récupération du résumé.");
       }
-    } catch {
-      setError('Erreur de connexion lors de la récupération du résumé.');
+    } catch (err) {
+      setError("Erreur de connexion.");
     } finally {
       setLoading(false);
     }
@@ -85,6 +90,7 @@ export function ClosureModal({ open, onClose, onSuccess, sessionId }: ClosureMod
 
   const handleConfirm = async () => {
     if (!summary || isClosing) return;
+    
     setIsClosing(true);
     try {
       const res = await fetch(`/api/odoo/session?session_id=${sessionId}`, {
@@ -92,20 +98,21 @@ export function ClosureModal({ open, onClose, onSuccess, sessionId }: ClosureMod
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ closingBalance: parseFloat(realCash) || 0 }),
       });
+      
       const data = await res.json();
       if (data.success) {
         handlePrintClosure();
         setIsDone(true);
+        toast({ description: "Session clôturée avec succès." });
       } else {
-        setError(data.error || 'Erreur lors de la clôture de la session.');
+        toast({ variant: "destructive", description: data.error || "Erreur de clôture." });
       }
-    } catch {
-      setError('Erreur réseau lors de la clôture.');
+    } catch (err) {
+      toast({ variant: "destructive", description: "Erreur réseau." });
     } finally {
       setIsClosing(false);
     }
   };
-
 
   const handlePrintClosure = () => {
     if (!summary) return;
@@ -121,110 +128,60 @@ export function ClosureModal({ open, onClose, onSuccess, sessionId }: ClosureMod
       </div>
     `).join('');
 
+    const expectedCash = summary?.expected_cash || 0;
+    const realCashValue = parseFloat(realCash) || 0;
+    const difference = realCashValue - expectedCash;
+
     const ticketHtml = `
       <!DOCTYPE html>
-      <html lang="fr">
+      <html>
       <head>
         <title>Clôture - ${summary.name}</title>
         <meta charset="UTF-8"/>
         <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 13px;
-            width: 80mm;
-            padding: 5mm;
-            background: #fff;
-            color: #000;
-          }
+          body { font-family: 'Courier New', Courier, monospace; font-size: 13px; width: 80mm; padding: 5mm; }
           .center { text-align: center; }
           .bold { font-weight: bold; }
           .header { margin-bottom: 5mm; }
-          .store-name { font-size: 16px; margin-bottom: 1mm; text-transform: uppercase; }
           .divider { border-top: 1px dashed #000; margin: 3mm 0; }
           .ticket-row { display: flex; justify-content: space-between; margin-top: 2mm; }
-          .ticket-row-meta { font-size: 11px; margin-bottom: 1mm; }
-          .totals { margin-top: 4mm; }
-          .totals-row { display: flex; justify-content: space-between; font-size: 14px; margin-top: 1mm; }
-          .footer { margin-top: 8mm; font-size: 11px; }
-          @media print {
-            body { width: 80mm; padding: 2mm; }
-            @page { margin: 0; size: 80mm auto; }
-          }
+          @media print { body { width: 80mm; padding: 2mm; } @page { margin: 0; size: 80mm auto; } }
         </style>
       </head>
       <body>
         <div class="header center">
-          <div class="store-name bold">${storeName}</div>
+          <div class="bold" style="font-size: 16px;">${storeName}</div>
           <div>${storeAddress}</div>
           <div class="divider"></div>
           <div class="bold">RAPPORT DE CLÔTURE</div>
           <div class="bold">${summary.name}</div>
-          ${summary.cashierName ? `<div>Caissier: ${summary.cashierName}</div>` : ''}
           <div>Le: ${dateStr}</div>
         </div>
-        
         <div class="divider"></div>
-        <div class="ticket-row">
-          <span>Début session</span>
-          <span>${summary.opening_balance.toFixed(2)} DT</span>
-        </div>
-        <div class="ticket-row">
-          <span>Ventes totales</span>
-          <span>${summary.total_payments.toFixed(2)} DT</span>
-        </div>
-        
+        <div class="ticket-row"><span>Ouverture</span><span>${summary.opening_balance.toFixed(2)} DT</span></div>
+        <div class="ticket-row"><span>Total Ventes</span><span>${summary.total_payments.toFixed(2)} DT</span></div>
         <div class="divider"></div>
         <div class="bold">DÉTAIL PAIEMENTS:</div>
         ${paymentRows}
-        
         <div class="divider"></div>
-        <div class="ticket-row bold">
-          <span>ESPÈCES RÉELLES</span>
-          <span>${realCashValue.toFixed(2)} DT</span>
-        </div>
-        <div class="ticket-row">
-          <span>Attendu (Espèces)</span>
-          <span>${expectedCash.toFixed(2)} DT</span>
-        </div>
-        <div class="ticket-row bold">
-          <span>DIFFÉRENCE</span>
-          <span>${difference >= 0 ? '+' : ''}${difference.toFixed(2)} DT</span>
-        </div>
-        
+        <div class="ticket-row bold"><span>ESPÈCES RÉELLES</span><span>${realCashValue.toFixed(2)} DT</span></div>
+        <div class="ticket-row"><span>Attendu</span><span>${expectedCash.toFixed(2)} DT</span></div>
+        <div class="ticket-row bold"><span>DIFFÉRENCE</span><span>${difference >= 0 ? '+' : ''}${difference.toFixed(2)} DT</span></div>
         <div class="divider"></div>
-        <div class="footer center">
-          <div>Clôture effectuée avec succès</div>
-          <div style="margin-top: 3mm; font-size: 10px;">ID: ${summary.id}</div>
-        </div>
+        <div class="footer center"><div>Clôture effectuée</div><div style="margin-top: 3mm; font-size: 10px;">ID: ${summary.id}</div></div>
       </body>
       </html>
     `;
 
-    printHtml(ticketHtml);
-  };
-
-  const printHtml = (html: string) => {
     const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
-    iframe.style.border = 'none';
-    iframe.style.left = '-9999px';
+    iframe.style.position = 'absolute'; iframe.style.width = '0px'; iframe.style.height = '0px'; iframe.style.border = 'none'; iframe.style.left = '-9999px';
     document.body.appendChild(iframe);
-    
     if (iframe.contentWindow) {
-      iframe.contentWindow.document.open();
-      iframe.contentWindow.document.write(html);
-      iframe.contentWindow.document.close();
+      iframe.contentWindow.document.open(); iframe.contentWindow.document.write(ticketHtml); iframe.contentWindow.document.close();
       iframe.contentWindow.focus();
-      setTimeout(() => {
-        iframe.contentWindow?.print();
-        setTimeout(() => document.body.removeChild(iframe), 1000);
-      }, 500);
+      setTimeout(() => { iframe.contentWindow?.print(); setTimeout(() => document.body.removeChild(iframe), 1000); }, 500);
     }
   };
-
 
   const expectedCash = summary?.expected_cash || 0;
   const realCashValue = parseFloat(realCash) || 0;
@@ -232,158 +189,150 @@ export function ClosureModal({ open, onClose, onSuccess, sessionId }: ClosureMod
 
   return (
     <Dialog open={open} onOpenChange={(val) => { if (!val && !isClosing) onClose(); }}>
-      <DialogContent className="max-w-2xl gap-0 p-0 overflow-hidden border-none bg-background shadow-2xl rounded-3xl">
-        <DialogHeader className="p-8 bg-slate-900 text-white">
-          <div className="flex items-center gap-4 mb-2">
-            <div className="p-3 bg-blue-500/20 rounded-2xl">
-              <Calculator className="h-6 w-6 text-blue-400" />
+      <DialogContent className="max-w-xl gap-0 p-0 overflow-hidden border border-border bg-white dark:bg-zinc-900 rounded-lg shadow-xl">
+        {/* Clean Header */}
+        <div className="flex items-center justify-between p-4 border-b border-border bg-slate-50/50 dark:bg-zinc-800/50">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+              <Calculator className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <DialogTitle className="text-2xl font-black tracking-tight uppercase">Clôture de Caisse</DialogTitle>
-              <DialogDescription className="text-slate-400 font-medium">
-                {summary?.cashierName
-                  ? `Session de : ${summary.cashierName} · ${summary.name}`
-                  : 'Vérification des fonds et fermeture de la session Odoo'}
-              </DialogDescription>
+              <DialogTitle className="text-sm font-bold text-foreground uppercase tracking-tight">Fin de Session</DialogTitle>
+              <DialogDescription className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Clôture et vérification des fonds</DialogDescription>
             </div>
           </div>
-        </DialogHeader>
+          <button 
+            onClick={onClose}
+            className="p-2 hover:bg-slate-200 dark:hover:bg-zinc-700 rounded-full transition-colors"
+          >
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
 
-        <div className="p-8 space-y-8 overflow-y-auto max-h-[60vh]">
+        <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-12 gap-4">
-              <Loader2 className="h-10 w-10 animate-spin text-primary" />
-              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Calcul des totaux...</p>
+              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Calcul des totaux...</p>
             </div>
           ) : error ? (
-            <div className="bg-red-50 border border-red-100 p-6 rounded-2xl flex items-center gap-4 text-red-900">
-              <AlertTriangle className="h-6 w-6 flex-shrink-0" />
-              <p className="font-bold">{error}</p>
+            <div className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 p-4 rounded-lg flex items-center gap-3 text-red-700 dark:text-red-400">
+              <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+              <p className="text-sm font-medium">{error}</p>
             </div>
           ) : summary && (
             <div className="space-y-6">
               {!isDone ? (
-                <div className="p-8 bg-slate-50 rounded-3xl border border-slate-200 shadow-inner">
-                  <div>
-                    <label className="text-sm font-black uppercase tracking-widest text-slate-500 block mb-4 text-center">
-                      Saisir les espèces réelles en caisse
+                <div className="space-y-4">
+                  <div className="p-6 bg-slate-50 dark:bg-zinc-800/50 rounded-lg border border-border">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-4 text-center">
+                      Saisir le total espèces en caisse
                     </label>
-                    <div className="relative max-w-sm mx-auto">
+                    <div className="relative max-w-[240px] mx-auto">
                       <Input
                         type="number"
                         step="0.01"
                         value={realCash}
                         onChange={(e) => setRealCash(e.target.value)}
-                        className="h-20 text-4xl font-black px-6 text-center rounded-2xl border-2 focus-visible:ring-primary focus-visible:border-primary transition-all shadow-sm"
+                        className="h-16 text-3xl font-bold px-4 text-center rounded-lg border-border focus-visible:ring-blue-500 transition-all bg-white dark:bg-zinc-900"
                         placeholder="0.00"
                         autoFocus
                       />
-                      <div className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xl">DT</div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-3xl flex items-center gap-4 text-emerald-900">
-                    <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-                    <div>
-                      <h3 className="text-lg font-black uppercase tracking-tight">Session Clôturée avec Succès</h3>
-                      <p className="text-sm font-medium opacity-80">Le rapport a été envoyé à l'imprimante.</p>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground font-bold text-sm">DT</div>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-secondary/30 p-5 rounded-2xl border border-border">
-                      <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-                        <History className="h-4 w-4" />
-                        <span className="text-xs font-bold uppercase tracking-wider">Début session</span>
-                      </div>
-                      <p className="text-xl font-black">{summary.opening_balance.toFixed(2)} DT</p>
+                    <div className="p-4 bg-slate-50 dark:bg-zinc-800/30 rounded-lg border border-border">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Total Ventes</p>
+                      <p className="text-lg font-bold">{summary.total_payments.toFixed(2)} DT</p>
                     </div>
-                    <div className="bg-primary/5 p-5 rounded-2xl border border-primary/10">
-                      <div className="flex items-center gap-2 mb-2 text-primary">
-                        <TrendingUp className="h-4 w-4" />
-                        <span className="text-xs font-bold uppercase tracking-wider">Ventes Totales</span>
-                      </div>
-                      <p className="text-xl font-black text-primary">{summary.total_payments.toFixed(2)} DT</p>
+                    <div className="p-4 bg-slate-50 dark:bg-zinc-800/30 rounded-lg border border-border">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Attendu (Espèces)</p>
+                      <p className="text-lg font-bold">{expectedCash.toFixed(2)} DT</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20 p-5 rounded-lg flex items-center gap-4 text-emerald-800 dark:text-emerald-400">
+                    <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+                    <div>
+                      <h3 className="text-sm font-bold uppercase tracking-tight">Session Clôturée</h3>
+                      <p className="text-[10px] font-medium opacity-80">Rapport de clôture prêt pour impression.</p>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                      <Wallet className="h-4 w-4" /> Détail des encaissements
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-4 bg-slate-50 dark:bg-zinc-800/30 rounded-lg border border-border">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Espèces Réelles</p>
+                      <p className="text-lg font-bold">{realCashValue.toFixed(2)} DT</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-zinc-800/30 rounded-lg border border-border">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Différence</p>
+                      <p className={`text-lg font-bold ${difference === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {difference >= 0 ? '+' : ''}{difference.toFixed(2)} DT
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Wallet className="h-3 w-3" /> Modes de règlement
                     </h4>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 gap-1">
                       {summary.payments.map((p, idx) => (
-                        <div key={idx} className="flex justify-between items-center p-3 bg-card border border-border rounded-xl">
-                          <span className="text-xs font-bold">{p.method}</span>
-                          <span className="text-sm font-black">{p.amount.toFixed(2)}</span>
+                        <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-zinc-800/30 border border-border rounded-lg">
+                          <span className="text-xs font-medium">{p.method}</span>
+                          <span className="text-xs font-bold">{p.amount.toFixed(2)} DT</span>
                         </div>
                       ))}
                     </div>
                   </div>
-
-                  <div className="p-6 bg-slate-900 text-white rounded-3xl space-y-4 shadow-xl">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold uppercase opacity-60">Espèces Réelles</span>
-                      <span className="text-2xl font-black">{realCashValue.toFixed(2)} DT</span>
-                    </div>
-                    <div className="flex justify-between items-center opacity-60 border-t border-white/10 pt-4">
-                      <span className="text-xs font-bold uppercase">Attendu</span>
-                      <span className="text-lg font-black">{expectedCash.toFixed(2)} DT</span>
-                    </div>
-                    <div className={`flex justify-between items-center pt-4 border-t border-white/10 ${difference === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      <span className="text-xs font-bold uppercase">Différence</span>
-                      <span className="text-2xl font-black">
-                        {difference >= 0 ? '+' : ''}{difference.toFixed(2)} DT
-                      </span>
-                    </div>
-                  </div>
-                </>
+                </div>
               )}
             </div>
           )}
         </div>
 
-        <DialogFooter className="p-8 bg-slate-50 border-t border-border gap-3 sm:justify-between items-center">
+        <DialogFooter className="p-4 border-t border-border bg-slate-50/50 dark:bg-zinc-800/30 flex justify-end gap-3">
           {!isDone ? (
             <>
-              <Button
-                variant="ghost"
-                onClick={onClose}
+              <Button 
+                variant="outline" 
+                onClick={onClose} 
                 disabled={isClosing}
-                className="font-bold uppercase tracking-wider text-muted-foreground hover:bg-slate-200"
+                className="text-xs font-bold uppercase tracking-wider h-10 border-border"
               >
                 Annuler
               </Button>
-              <Button
-                onClick={handleConfirm}
+              <Button 
+                onClick={handleConfirm} 
                 disabled={loading || !!error || isClosing || !realCash}
-                className="h-14 px-10 bg-slate-900 hover:bg-slate-800 text-white font-black uppercase tracking-widest rounded-xl shadow-xl shadow-slate-900/10 flex items-center gap-3 transition-transform active:scale-95"
+                className="h-10 px-8 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase tracking-widest rounded-lg shadow-md flex items-center gap-2 transition-all active:scale-95"
               >
-                {isClosing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Printer className="h-5 w-5 text-emerald-400" />}
-                Valider et Imprimer
+                {isClosing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                Clôturer & Imprimer
               </Button>
             </>
           ) : (
             <>
-              <Button
-                variant="outline"
+              <Button 
+                variant="outline" 
                 onClick={handlePrintClosure}
-                className="h-14 px-6 font-bold uppercase tracking-wider flex items-center gap-2 border-2"
+                className="text-xs font-bold uppercase tracking-wider h-10 border-border flex items-center gap-2"
               >
-                <Printer className="h-5 w-5" /> Ré-imprimer
+                <Printer className="h-4 w-4" /> Ré-imprimer
               </Button>
-              <Button
-                onClick={onSuccess}
-                className="h-14 px-10 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-xl shadow-xl shadow-blue-900/10 flex items-center gap-3 transition-transform active:scale-95"
+              <Button 
+                onClick={onSuccess} 
+                className="h-10 px-8 bg-slate-900 dark:bg-blue-600 text-white font-bold text-xs uppercase tracking-widest rounded-lg flex items-center gap-2"
               >
-                Fermer et Déconnexion <CheckCircle2 className="h-5 w-5" />
+                Terminer <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
             </>
           )}
         </DialogFooter>
-
       </DialogContent>
     </Dialog>
   );

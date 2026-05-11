@@ -23,14 +23,18 @@ export function useOdooCustomers() {
 
   const fetchCustomers = useCallback(async () => {
     if (!sessionId) return;
+
     setIsLoading(true);
     setError(null);
+
     try {
       const response = await fetch(`/api/odoo/customers?session_id=${sessionId}`);
       const data = await response.json();
+
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to fetch customers');
       }
+
       setCustomers(data.customers || []);
     } catch (err: any) {
       setError(err.message || 'An unexpected error occurred');
@@ -48,19 +52,28 @@ export function useOdooCustomers() {
     city?: string;
     vat?: string;
   }) => {
-    if (!sessionId) throw new Error('Not authenticated');
+    if (!sessionId) {
+        throw new Error('Not authenticated');
+    }
+
     try {
       const response = await fetch(`/api/odoo/customers?session_id=${sessionId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(customerData),
       });
+
       const data = await response.json();
+
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to create customer');
       }
+
+      // Add the new customer to the list
       if (data.customer) {
-        setCustomers(prev => [...prev, data.customer]);
+          setCustomers(prev => [...prev, data.customer]);
       }
       return data.customer;
     } catch (err: any) {
@@ -68,9 +81,16 @@ export function useOdooCustomers() {
     }
   };
 
+  // Initially fetch customers
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
 
-  return { customers, isLoading, error, refetch: fetchCustomers, createCustomer };
+  return {
+    customers,
+    isLoading,
+    error,
+    refetch: fetchCustomers,
+    createCustomer,
+  };
 }
